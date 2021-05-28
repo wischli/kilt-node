@@ -5,7 +5,6 @@ usage() { echo "Usage: $0  -e <environment> " 1>&2; exit 1; }
 set -e
 
 declare env=""
-declare module=""
 
 
 # Initialize parameters specified from command line

@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-
-ACR_REPOSITORY_NAME=paga/$MODULE
-
 set +x
 
 export ECR_REPOSITORY="kilt/prototype-chain"
