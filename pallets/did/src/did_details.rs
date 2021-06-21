@@ -23,13 +23,6 @@ use sp_std::collections::{btree_map::BTreeMap, btree_set::BTreeSet};
 
 use crate::*;
 
-/// The string description of a DID public key.
-///
-/// The description must follow the [DID specification](https://w3c.github.io/did-spec-registries/#verification-method-types).
-pub trait DidPublicKeyDescription {
-	fn get_did_key_description(&self) -> &str;
-}
-
 /// Types of verification keys a DID can control.
 #[derive(Clone, Copy, Decode, Debug, Encode, Eq, Ord, PartialEq, PartialOrd)]
 pub enum DidVerificationKey {
@@ -46,7 +39,7 @@ impl DidVerificationKey {
 			DidVerificationKey::Ed25519(public_key) => {
 				// Try to re-create a Signature value or throw an error if raw value is invalid
 				if let DidSignature::Ed25519(sig) = signature {
-					Ok(sig.verify(payload, &public_key))
+					Ok(sig.verify(payload, public_key))
 				} else {
 					Err(SignatureError::InvalidSignatureFormat)
 				}
@@ -54,37 +47,18 @@ impl DidVerificationKey {
 			// Follows same process as above, but using a Sr25519 instead
 			DidVerificationKey::Sr25519(public_key) => {
 				if let DidSignature::Sr25519(sig) = signature {
-					Ok(sig.verify(payload, &public_key))
+					Ok(sig.verify(payload, public_key))
 				} else {
 					Err(SignatureError::InvalidSignatureFormat)
 				}
 			}
 		}
 	}
-}
 
-impl TryFrom<Vec<u8>> for DidVerificationKey {
-	type Error = KeyError;
-
-	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-		if let Ok(ed25519_key) = ed25519::Public::try_from(value.as_ref()) {
-			Ok(Self::from(ed25519_key))
-		} else if let Ok(sr25519_key) = sr25519::Public::try_from(value.as_ref()) {
-			Ok(Self::from(sr25519_key))
-		} else {
-			Err(KeyError::InvalidVerificationKeyFormat)
-		}
-	}
-}
-
-impl DidPublicKeyDescription for DidVerificationKey {
-	fn get_did_key_description(&self) -> &str {
-		match self {
-			// https://w3c.github.io/did-spec-registries/#ed25519verificationkey2018
-			DidVerificationKey::Ed25519(_) => "Ed25519VerificationKey2018",
-			// Not yet defined in the DID specification.
-			DidVerificationKey::Sr25519(_) => "Sr25519VerificationKey2020",
-		}
+	/// Returns a DidVerificationKey after decoding an encoded version of
+	/// itself.
+	pub fn from_didi_verification_key_encoded(encoded: Vec<u8>) -> Result<Self, KeyError> {
+		Self::decode(&mut &encoded[..]).map_err(|_| KeyError::InvalidVerificationKeyFormat)
 	}
 }
 
@@ -105,13 +79,6 @@ impl From<sr25519::Public> for DidVerificationKey {
 pub enum DidEncryptionKey {
 	/// An X25519 public key.
 	X25519([u8; 32]),
-}
-
-impl DidPublicKeyDescription for DidEncryptionKey {
-	fn get_did_key_description(&self) -> &str {
-		// https://w3c.github.io/did-spec-registries/#x25519keyagreementkey2019
-		"X25519KeyAgreementKey2019"
-	}
 }
 
 /// A general public key under the control of the DID.
@@ -158,6 +125,13 @@ pub enum DidSignature {
 	Sr25519(sr25519::Signature),
 }
 
+impl DidSignature {
+	/// Returns a DidSignature after decoding an encoded version of itself.
+	pub fn from_did_signature_encoded(encoded: Vec<u8>) -> Result<Self, SignatureError> {
+		Self::decode(&mut &encoded[..]).map_err(|_| SignatureError::InvalidSignatureFormat)
+	}
+}
+
 impl From<ed25519::Signature> for DidSignature {
 	fn from(sig: ed25519::Signature) -> Self {
 		DidSignature::Ed25519(sig)
@@ -167,20 +141,6 @@ impl From<ed25519::Signature> for DidSignature {
 impl From<sr25519::Signature> for DidSignature {
 	fn from(sig: sr25519::Signature) -> Self {
 		DidSignature::Sr25519(sig)
-	}
-}
-
-impl TryFrom<Vec<u8>> for DidSignature {
-	type Error = SignatureError;
-
-	fn try_from(encoded_signature: Vec<u8>) -> Result<Self, Self::Error> {
-		if let Ok(ed25519_sig) = ed25519::Signature::try_from(encoded_signature.as_ref()) {
-			Ok(Self::from(ed25519_sig))
-		} else if let Ok(sr25519_sig) = sr25519::Signature::try_from(encoded_signature.as_ref()) {
-			Ok(Self::from(sr25519_sig))
-		} else {
-			Err(SignatureError::InvalidSignatureFormat)
-		}
 	}
 }
 
@@ -324,13 +284,10 @@ impl<T: Config> DidDetails<T> {
 	/// Delete the DID attestation key.
 	///
 	/// Once deleted, it cannot be used to write new attestations anymore.
-	/// The key is also removed from the set of verification keys if it not
-	/// used anywhere else in the DID.
+	/// The old key is not removed from the set of verification keys, hence
+	/// it can still be used to verify past attestations.
 	pub fn delete_attestation_key(&mut self) {
-		if let Some(old_attestation_key_id) = self.attestation_key {
-			self.attestation_key = None;
-			self.remove_key_if_unused(&old_attestation_key_id);
-		}
+		self.attestation_key = None;
 	}
 
 	/// Update the DID delegation key.
@@ -356,7 +313,7 @@ impl<T: Config> DidDetails<T> {
 
 	/// Delete the DID delegation key.
 	///
-	/// It cannot be used to write new delegations anymore.
+	/// Once deleted, it cannot be used to write new delegations anymore.
 	/// The key is also removed from the set of verification keys if it not
 	/// used anywhere else in the DID.
 	pub fn delete_delegation_key(&mut self) {
@@ -453,7 +410,7 @@ impl<T: Config> DidDetails<T> {
 		}?;
 		let key_details = self.public_keys.get(&key_id)?;
 		if let DidPublicKey::PublicVerificationKey(key) = &key_details.key {
-			Some(&key)
+			Some(key)
 		} else {
 			// The case of something different than a verification key should never happen.
 			None
@@ -481,8 +438,22 @@ impl<T: Config> DidDetails<T> {
 	}
 }
 
-impl<T: Config> From<DidCreationOperation<T>> for DidDetails<T> {
-	fn from(op: DidCreationOperation<T>) -> Self {
+impl<T: Config> TryFrom<DidCreationOperation<T>> for DidDetails<T> {
+	type Error = InputError;
+
+	fn try_from(op: DidCreationOperation<T>) -> Result<Self, Self::Error> {
+		ensure!(
+			op.new_key_agreement_keys.len() <= <<T as Config>::MaxNewKeyAgreementKeys>::get() as usize,
+			InputError::MaxKeyAgreementKeysLimitExceeded
+		);
+
+		if let Some(ref endpoint_url) = op.new_endpoint_url {
+			ensure!(
+				endpoint_url.len() <= T::MaxUrlLength::get() as usize,
+				InputError::MaxUrlLengthExceeded
+			);
+		}
+
 		let current_block_number = <frame_system::Pallet<T>>::block_number();
 
 		// Creates a new DID with the given authentication key.
@@ -500,7 +471,7 @@ impl<T: Config> From<DidCreationOperation<T>> for DidDetails<T> {
 
 		new_did_details.endpoint_url = op.new_endpoint_url;
 
-		new_did_details
+		Ok(new_did_details)
 	}
 }
 
@@ -517,6 +488,24 @@ impl<T: Config> TryFrom<(DidDetails<T>, DidUpdateOperation<T>)> for DidDetails<T
 	type Error = DidError;
 
 	fn try_from((old_details, update_operation): (DidDetails<T>, DidUpdateOperation<T>)) -> Result<Self, Self::Error> {
+		ensure!(
+			update_operation.new_key_agreement_keys.len() <= <<T as Config>::MaxNewKeyAgreementKeys>::get() as usize,
+			DidError::InputError(InputError::MaxKeyAgreementKeysLimitExceeded)
+		);
+
+		ensure!(
+			update_operation.public_keys_to_remove.len()
+				<= <<T as Config>::MaxVerificationKeysToRevoke>::get() as usize,
+			DidError::InputError(InputError::MaxVerificationKeysToRemoveLimitExceeded)
+		);
+
+		if let Some(ref endpoint_url) = update_operation.new_endpoint_url {
+			ensure!(
+				endpoint_url.len() <= T::MaxUrlLength::get() as usize,
+				DidError::InputError(InputError::MaxUrlLengthExceeded)
+			);
+		}
+
 		let current_block_number = <frame_system::Pallet<T>>::block_number();
 
 		let mut new_details = old_details;
@@ -592,6 +581,10 @@ pub trait DeriveDidCallAuthorizationVerificationKeyRelationship {
 	/// The type of the verification key to be used to validate the
 	/// wrapped extrinsic.
 	fn derive_verification_key_relationship(&self) -> Option<DidVerificationKeyRelationship>;
+
+	// Return a call to dispatch in order to test the pallet proxy feature.
+	#[cfg(feature = "runtime-benchmarks")]
+	fn get_call_for_did_call_benchmark() -> Self;
 }
 
 /// An operation to create a new DID.

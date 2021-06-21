@@ -22,16 +22,19 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::unused_unit)]
 
+pub mod default_weights;
 pub mod delegation_hierarchy;
 
 #[cfg(any(feature = "mock", test))]
 pub mod mock;
 
+#[cfg(feature = "runtime-benchmarks")]
+pub mod benchmarking;
+
 #[cfg(test)]
 mod tests;
 
-pub use delegation_hierarchy::*;
-pub use pallet::*;
+pub use crate::{default_weights::WeightInfo, delegation_hierarchy::*, pallet::*};
 
 use frame_support::{ensure, pallet_prelude::Weight, traits::Get};
 use sp_runtime::{traits::Hash, DispatchError};
@@ -47,19 +50,36 @@ pub mod pallet {
 	pub type DelegationNodeIdOf<T> = <T as Config>::DelegationNodeId;
 
 	/// Type of a delegator or a delegate.
-	pub type DelegatorIdOf<T> = did::DidIdentifierOf<T>;
+	pub type DelegatorIdOf<T> = <T as Config>::DelegationEntityId;
 
 	/// The type of a CTYPE hash.
 	pub type CtypeHashOf<T> = ctype::CtypeHashOf<T>;
 
-	/// Type of a signature over the delegation details.
-	pub type DelegationSignature = did::DidSignature;
+	/// Type of a signature verification operation over the delegation details.
+	pub type DelegationSignatureVerificationOf<T> = <T as Config>::DelegationSignatureVerification;
+
+	/// Type of the signature that the delegate generates over the delegation
+	/// information.
+	pub type DelegateSignatureTypeOf<T> = <DelegationSignatureVerificationOf<T> as VerifyDelegateSignature>::Signature;
 
 	#[pallet::config]
-	pub trait Config: frame_system::Config + ctype::Config + did::Config {
+	pub trait Config: frame_system::Config + ctype::Config {
+		type DelegationSignatureVerification: VerifyDelegateSignature<
+			DelegateId = Self::DelegationEntityId,
+			Payload = Vec<u8>,
+			Signature = Vec<u8>,
+		>;
+		type DelegationEntityId: Parameter;
 		type DelegationNodeId: Parameter + Copy + AsRef<[u8]>;
 		type EnsureOrigin: EnsureOrigin<Success = DelegatorIdOf<Self>, <Self as frame_system::Config>::Origin>;
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+		#[pallet::constant]
+		type MaxSignatureByteLength: Get<u16>;
+		#[pallet::constant]
+		type MaxRevocations: Get<u32>;
+		#[pallet::constant]
+		type MaxParentChecks: Get<u32>;
+		type WeightInfo: WeightInfo;
 	}
 
 	#[pallet::pallet]
@@ -147,6 +167,10 @@ pub mod pallet {
 		/// Max number of delegation nodes revocation has been reached for the
 		/// operation.
 		ExceededRevocationBounds,
+		/// The max number of revocation exceeds the limit for the pallet.
+		MaxRevocationsTooLarge,
+		/// The max number of parent checks exceeds the limit for the pallet.
+		MaxParentChecksTooLarge,
 		/// An error that is not supposed to take place, yet it happened.
 		InternalError,
 	}
@@ -161,7 +185,7 @@ pub mod pallet {
 		/// * origin: the identifier of the delegation creator
 		/// * root_id: the ID of the root node. It has to be unique
 		/// * ctype_hash: the CTYPE hash that delegates can use for attestations
-		#[pallet::weight(0)]
+		#[pallet::weight(<T as Config>::WeightInfo::create_root())]
 		pub fn create_root(
 			origin: OriginFor<T>,
 			root_id: DelegationNodeIdOf<T>,
@@ -203,7 +227,7 @@ pub mod pallet {
 		///   is allowed to perform
 		/// * delegate_signature: the delegate's signature over the new
 		///   delegation ID, root ID, parent ID, and permission flags
-		#[pallet::weight(0)]
+		#[pallet::weight(<T as Config>::WeightInfo::add_delegation())]
 		pub fn add_delegation(
 			origin: OriginFor<T>,
 			delegation_id: DelegationNodeIdOf<T>,
@@ -211,32 +235,19 @@ pub mod pallet {
 			parent_id: Option<DelegationNodeIdOf<T>>,
 			delegate: DelegatorIdOf<T>,
 			permissions: Permissions,
-			delegate_signature: did::DidSignature,
+			delegate_signature: DelegateSignatureTypeOf<T>,
 		) -> DispatchResultWithPostInfo {
 			let delegator = <T as Config>::EnsureOrigin::ensure_origin(origin)?;
-
-			// Retrieve delegate details for signature verification
-			let delegate_details = <did::Did<T>>::get(&delegate).ok_or(Error::<T>::DelegateNotFound)?;
 
 			// Calculate the hash root
 			let hash_root = Self::calculate_hash(&delegation_id, &root_id, &parent_id, &permissions);
 
-			// Verify that the hash root has been signed with the delegate's authentication
-			// key
-			did::pallet::Pallet::<T>::verify_payload_signature_with_did_key_type(
-				hash_root.as_ref(),
-				&delegate_signature,
-				&delegate_details,
-				did::DidVerificationKeyRelationship::Authentication,
-			)
-			.map_err(|err| match err {
-				// Should never happen as a DID has always a valid authentication key and UrlErrors are never thrown
-				// here.
-				did::DidError::StorageError(_) | did::DidError::UrlError(_) => Error::<T>::DelegateNotFound,
-				did::DidError::SignatureError(_) => Error::<T>::InvalidDelegateSignature,
-				// Should never happen as we are not checking the delegate's DID tx counter.
-				did::DidError::InternalError => Error::<T>::InternalError,
-			})?;
+			// Verify that the hash root signature is correct.
+			DelegationSignatureVerificationOf::<T>::verify(&delegate, &hash_root.encode(), &delegate_signature)
+				.map_err(|err| match err {
+					SignatureVerificationError::SignerInformationNotPresent => Error::<T>::DelegateNotFound,
+					SignatureVerificationError::SignatureInvalid => Error::<T>::InvalidDelegateSignature,
+				})?;
 
 			ensure!(
 				!<Delegations<T>>::contains_key(&delegation_id),
@@ -310,7 +321,7 @@ pub mod pallet {
 		/// * root_id: the ID of the delegation root to revoke
 		/// * max_children: the maximum number of nodes descending from the root
 		///   to revoke as a consequence of the root revocation
-		#[pallet::weight(0)]
+		#[pallet::weight(<T as Config>::WeightInfo::revoke_root(*max_children))]
 		pub fn revoke_root(
 			origin: OriginFor<T>,
 			root_id: DelegationNodeIdOf<T>,
@@ -321,6 +332,11 @@ pub mod pallet {
 			let mut root = <Roots<T>>::get(&root_id).ok_or(Error::<T>::RootNotFound)?;
 
 			ensure!(root.owner == invoker, Error::<T>::UnauthorizedRevocation);
+
+			ensure!(
+				max_children <= T::MaxRevocations::get(),
+				Error::<T>::MaxRevocationsTooLarge
+			);
 
 			let consumed_weight: Weight = if !root.revoked {
 				// Recursively revoke all children
@@ -361,7 +377,9 @@ pub mod pallet {
 		///   max number of parents is reached
 		/// * max_revocations: the maximum number of nodes descending from this
 		///   one to revoke as a consequence of this node revocation
-		#[pallet::weight(0)]
+		#[pallet::weight(
+			<T as Config>::WeightInfo::revoke_delegation_root_child(*max_revocations, *max_parent_checks)
+				.max(<T as Config>::WeightInfo::revoke_delegation_leaf(*max_revocations, *max_parent_checks)))]
 		pub fn revoke_delegation(
 			origin: OriginFor<T>,
 			delegation_id: DelegationNodeIdOf<T>,
@@ -376,8 +394,18 @@ pub mod pallet {
 			);
 
 			ensure!(
+				max_parent_checks <= T::MaxParentChecks::get(),
+				Error::<T>::MaxParentChecksTooLarge
+			);
+
+			ensure!(
 				Self::is_delegating(&invoker, &delegation_id, max_parent_checks)?,
 				Error::<T>::UnauthorizedRevocation
+			);
+
+			ensure!(
+				max_revocations <= T::MaxRevocations::get(),
+				Error::<T>::MaxRevocationsTooLarge
 			);
 
 			// Revoke the delegation and recursively all of its children

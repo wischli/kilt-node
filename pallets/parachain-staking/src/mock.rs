@@ -16,6 +16,9 @@
 
 // If you feel like getting in touch with us, you can do so at info@botlabs.org
 //! Test utilities
+
+#![allow(clippy::from_over_into)]
+
 use super::*;
 use crate::{self as stake};
 use frame_support::{
@@ -40,6 +43,7 @@ pub const DECIMALS: Balance = 10u128.pow(15);
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
+
 // Configure a mock runtime to test the pallet.
 construct_runtime!(
 	pub enum Test where
@@ -90,8 +94,11 @@ impl frame_system::Config for Test {
 parameter_types! {
 	pub const ExistentialDeposit: Balance = 1;
 }
+
 impl pallet_balances::Config for Test {
 	type MaxLocks = ();
+	type MaxReserves = ();
+	type ReserveIdentifier = [u8; 8];
 	type Balance = Balance;
 	type Event = Event;
 	type DustRemoval = ();
@@ -121,9 +128,8 @@ parameter_types! {
 	pub const MinBlocksPerRound: BlockNumber = 3; // 20
 	pub const StakeDuration: u32 = 2;
 	pub const ExitQueueDelay: u32 = 2;
-	pub const MaxExitsPerRound: usize = 5;
 	pub const DefaultBlocksPerRound: BlockNumber = BLOCKS_PER_ROUND;
-	pub const MinSelectedCandidates: u32 = 5;
+	pub const MinSelectedCandidates: u32 = 2;
 	pub const MaxDelegatorsPerCollator: u32 = 4;
 	pub const MaxCollatorsPerDelegator: u32 = 4;
 	pub const DefaultCollatorCommission: Perbill = Perbill::from_percent(20);
@@ -132,7 +138,7 @@ parameter_types! {
 	pub const MaxCollatorCandidates: u32 = 10;
 	pub const MinDelegatorStk: Balance = 5;
 	pub const MinDelegation: Balance = 3;
-	pub const MaxUnstakeRequests: usize = 5;
+	pub const MaxUnstakeRequests: u32 = 5;
 }
 
 impl Config for Test {
@@ -143,7 +149,6 @@ impl Config for Test {
 	type DefaultBlocksPerRound = DefaultBlocksPerRound;
 	type StakeDuration = StakeDuration;
 	type ExitQueueDelay = ExitQueueDelay;
-	type MaxExitsPerRound = MaxExitsPerRound;
 	type MinSelectedCandidates = MinSelectedCandidates;
 	type MaxDelegatorsPerCollator = MaxDelegatorsPerCollator;
 	type MaxCollatorsPerDelegator = MaxCollatorsPerDelegator;
@@ -154,6 +159,7 @@ impl Config for Test {
 	type MinDelegatorStk = MinDelegatorStk;
 	type MinDelegation = MinDelegation;
 	type MaxUnstakeRequests = MaxUnstakeRequests;
+	type WeightInfo = ();
 }
 
 pub(crate) struct ExtBuilder {
@@ -294,6 +300,12 @@ pub(crate) fn events() -> Vec<pallet::Event<Test>> {
 	System::events()
 		.into_iter()
 		.map(|r| r.event)
-		.filter_map(|e| if let Event::stake(inner) = e { Some(inner) } else { None })
+		.filter_map(|e| {
+			if let Event::StakePallet(inner) = e {
+				Some(inner)
+			} else {
+				None
+			}
+		})
 		.collect::<Vec<_>>()
 }

@@ -52,7 +52,7 @@ impl TryFrom<&[u8]> for HttpUrl {
 			UrlError::InvalidUrlScheme
 		);
 
-		ensure!(utils::is_valid_ascii_url(&str_url), UrlError::InvalidUrlEncoding);
+		ensure!(utils::is_valid_ascii_url(str_url), UrlError::InvalidUrlEncoding);
 
 		Ok(HttpUrl {
 			payload: value.to_vec(),
@@ -80,7 +80,7 @@ impl TryFrom<&[u8]> for FtpUrl {
 			UrlError::InvalidUrlScheme
 		);
 
-		ensure!(utils::is_valid_ascii_url(&str_url), UrlError::InvalidUrlEncoding);
+		ensure!(utils::is_valid_ascii_url(str_url), UrlError::InvalidUrlEncoding);
 
 		Ok(FtpUrl {
 			payload: value.to_vec(),
@@ -131,6 +131,18 @@ pub enum Url {
 	Ftp(FtpUrl),
 	/// See [IpfsUrl].
 	Ipfs(IpfsUrl),
+}
+
+impl Url {
+	#[allow(clippy::len_without_is_empty)]
+	pub fn len(&self) -> usize {
+		match self {
+			Self::Http(HttpUrl { payload }) | Self::Ftp(FtpUrl { payload }) | Self::Ipfs(IpfsUrl { payload }) => {
+				// We can use .len() as we know the string is ASCII, so 1 byte <-> 1 character
+				payload.len()
+			}
+		}
+	}
 }
 
 impl From<HttpUrl> for Url {

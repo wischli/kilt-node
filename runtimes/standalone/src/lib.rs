@@ -27,8 +27,11 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
+use codec::Decode;
+use frame_support::ensure;
+use frame_system::EnsureSigned;
 use kilt_primitives::{
-	constants::{DOLLARS, MIN_VESTED_TRANSFER_AMOUNT, SLOT_DURATION},
+	constants::{KILT, MILLI_KILT, MIN_VESTED_TRANSFER_AMOUNT, SLOT_DURATION},
 	AccountId, Balance, BlockNumber, DidIdentifier, Hash, Index, Signature,
 };
 use pallet_grandpa::{fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList};
@@ -38,9 +41,9 @@ use sp_consensus_aura::{ed25519::AuthorityId as AuraId, SlotDuration};
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
-	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, ConvertInto, NumberFor, OpaqueKeys},
+	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, ConvertInto, NumberFor, OpaqueKeys, Verify},
 	transaction_validity::{TransactionSource, TransactionValidity},
-	ApplyExtrinsicResult,
+	ApplyExtrinsicResult, MultiSignature,
 };
 use sp_std::prelude::*;
 #[cfg(feature = "std")]
@@ -106,7 +109,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: create_runtime_str!("mashnet-node"),
 	impl_name: create_runtime_str!("mashnet-node"),
 	authoring_version: 4,
-	spec_version: 10,
+	spec_version: 11,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 2,
@@ -236,12 +239,15 @@ impl pallet_indices::Config for Runtime {
 }
 
 parameter_types! {
-	pub const ExistentialDeposit: Balance = 500;
+	pub const ExistentialDeposit: Balance = 100 * MILLI_KILT;
 	pub const MaxLocks: u32 = 50;
+	pub const MaxReserves: u32 = 50;
 }
 
 impl pallet_balances::Config for Runtime {
 	type MaxLocks = MaxLocks;
+	type MaxReserves = MaxReserves;
+	type ReserveIdentifier = [u8; 8];
 	/// The type for recording an account's balance.
 	type Balance = Balance;
 	/// The ubiquitous event type.
@@ -249,7 +255,7 @@ impl pallet_balances::Config for Runtime {
 	type DustRemoval = ();
 	type ExistentialDeposit = ExistentialDeposit;
 	type AccountStore = System;
-	type WeightInfo = pallet_balances::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = ();
 }
 
 /// Logic for the author to get a portion of fees.
@@ -271,16 +277,40 @@ where
 	}
 }
 
+impl delegation::VerifyDelegateSignature for Runtime {
+	type DelegateId = AccountId;
+	type Payload = Vec<u8>;
+	type Signature = Vec<u8>;
+
+	// No need to retrieve delegate details as it is simply an AccountId.
+	fn verify(
+		delegate: &Self::DelegateId,
+		payload: &Self::Payload,
+		signature: &Self::Signature,
+	) -> delegation::SignatureVerificationResult {
+		// Try to decode signature first.
+		let decoded_signature = MultiSignature::decode(&mut &signature[..])
+			.map_err(|_| delegation::SignatureVerificationError::SignatureInvalid)?;
+
+		ensure!(
+			decoded_signature.verify(&payload[..], delegate),
+			delegation::SignatureVerificationError::SignatureInvalid
+		);
+
+		Ok(())
+	}
+}
+
 parameter_types! {
-	pub const MaxClaims: u32 = 300;
-	pub const UsableBalance: Balance = DOLLARS;
+	pub const MaxClaims: u32 = 50;
+	pub const UsableBalance: Balance = KILT;
 }
 
 impl kilt_launch::Config for Runtime {
 	type Event = Event;
 	type MaxClaims = MaxClaims;
 	type UsableBalance = UsableBalance;
-	type WeightInfo = kilt_launch::default_weights::SubstrateWeight<Runtime>;
+	type WeightInfo = ();
 }
 
 parameter_types! {
@@ -300,35 +330,51 @@ impl pallet_sudo::Config for Runtime {
 }
 
 impl attestation::Config for Runtime {
-	type EnsureOrigin = did::EnsureDidOrigin<DidIdentifier>;
+	type EnsureOrigin = EnsureSigned<<Self as delegation::Config>::DelegationEntityId>;
 	type Event = Event;
+	type WeightInfo = ();
 }
 
-impl ctype::Config for Runtime {
-	type CtypeCreatorId = DidIdentifier;
-	type EnsureOrigin = did::EnsureDidOrigin<Self::CtypeCreatorId>;
-	type Event = Event;
+parameter_types! {
+	pub const MaxSignatureByteLength: u16 = 64;
+	pub const MaxParentChecks: u32 = 5;
+	pub const MaxRevocations: u32 = 5;
 }
 
 impl delegation::Config for Runtime {
+	type DelegationSignatureVerification = Self;
+	type DelegationEntityId = AccountId;
 	type DelegationNodeId = Hash;
+	type EnsureOrigin = EnsureSigned<Self::DelegationEntityId>;
 	type Event = Event;
-	type EnsureOrigin = did::EnsureDidOrigin<DidIdentifier>;
+	type MaxSignatureByteLength = MaxSignatureByteLength;
+	type MaxParentChecks = MaxParentChecks;
+	type MaxRevocations = MaxRevocations;
+	type WeightInfo = ();
+}
+
+impl ctype::Config for Runtime {
+	type CtypeCreatorId = AccountId;
+	type EnsureOrigin = EnsureSigned<Self::CtypeCreatorId>;
+	type Event = Event;
+	type WeightInfo = ();
+}
+
+parameter_types! {
+	pub const MaxNewKeyAgreementKeys: u32 = 10u32;
+	pub const MaxVerificationKeysToRevoke: u32 = 10u32;
+	pub const MaxUrlLength: u32 = 200u32;
 }
 
 impl did::Config for Runtime {
-	type DidIdentifier = AccountId;
+	type DidIdentifier = DidIdentifier;
 	type Event = Event;
 	type Call = Call;
 	type Origin = Origin;
-}
-
-pub struct PortableGabiRemoval;
-impl frame_support::traits::OnRuntimeUpgrade for PortableGabiRemoval {
-	fn on_runtime_upgrade() -> frame_support::weights::Weight {
-		frame_support::storage::unhashed::kill_prefix(&sp_io::hashing::twox_128(b"Portablegabi"));
-		Weight::max_value()
-	}
+	type MaxNewKeyAgreementKeys = MaxNewKeyAgreementKeys;
+	type MaxVerificationKeysToRevoke = MaxVerificationKeysToRevoke;
+	type MaxUrlLength = MaxUrlLength;
+	type WeightInfo = ();
 }
 
 parameter_types! {
@@ -371,7 +417,7 @@ impl pallet_vesting::Config for Runtime {
 	type BlockNumberToBalance = ConvertInto;
 	// disable vested transfers by setting min amount to max balance
 	type MinVestedTransfer = MinVestedTransfer;
-	type WeightInfo = pallet_vesting::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = ();
 }
 
 impl pallet_utility::Config for Runtime {
@@ -379,6 +425,8 @@ impl pallet_utility::Config for Runtime {
 	type Call = Call;
 	type WeightInfo = ();
 }
+
+impl pallet_randomness_collective_flip::Config for Runtime {}
 
 construct_runtime!(
 	pub enum Runtime where
@@ -432,8 +480,18 @@ impl did::DeriveDidCallAuthorizationVerificationKeyRelationship for Call {
 			Call::Attestation(_) => Some(did::DidVerificationKeyRelationship::AssertionMethod),
 			Call::Ctype(_) => Some(did::DidVerificationKeyRelationship::AssertionMethod),
 			Call::Delegation(_) => Some(did::DidVerificationKeyRelationship::CapabilityDelegation),
+			#[cfg(not(feature = "runtime-benchmarks"))]
 			_ => None,
+			// By default, returns the authentication key
+			#[cfg(feature = "runtime-benchmarks")]
+			_ => Some(did::DidVerificationKeyRelationship::Authentication),
 		}
+	}
+
+	// Always return a System::remark() extrinsic call
+	#[cfg(feature = "runtime-benchmarks")]
+	fn get_call_for_did_call_benchmark() -> Self {
+		Call::System(frame_system::Call::remark(vec![]))
 	}
 }
 
@@ -628,8 +686,23 @@ impl_runtime_apis! {
 			add_benchmark!(params, batches, kilt_launch, KiltLaunch);
 			add_benchmark!(params, batches, pallet_vesting, Vesting);
 
+			add_benchmark!(params, batches, did, Did);
+			add_benchmark!(params, batches, ctype, Ctype);
+			add_benchmark!(params, batches, delegation, Delegation);
+			add_benchmark!(params, batches, attestation, Attestation);
+
 			if batches.is_empty() { return Err("Benchmark not found for this pallet.".into()) }
 			Ok(batches)
+		}
+	}
+
+	// From the Polkadot repo: https://github.com/paritytech/polkadot/blob/master/runtime/polkadot/src/lib.rs#L1371
+	#[cfg(feature = "try-runtime")]
+	impl frame_try_runtime::TryRuntime<Block> for Runtime {
+		fn on_runtime_upgrade() -> Result<(Weight, Weight), sp_runtime::RuntimeString> {
+			log::info!("try-runtime::on_runtime_upgrade for mashnet runtime.");
+			let weight = Executive::try_runtime_upgrade()?;
+			Ok((weight, BlockWeights::get().max_block))
 		}
 	}
 }

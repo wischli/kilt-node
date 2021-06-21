@@ -26,6 +26,8 @@ use cumulus_client_service::genesis::generate_genesis_block;
 use cumulus_primitives_core::ParaId;
 use kilt_parachain_runtime::Block;
 use log::info;
+#[cfg(feature = "try-runtime")]
+use node_executor::Executor;
 use polkadot_parachain::primitives::AccountIdConversion;
 use sc_cli::{
 	ChainSpec, CliConfiguration, DefaultConfigurationValues, ImportParams, KeystoreParams, NetworkParams, Result,
@@ -41,10 +43,12 @@ fn load_spec(id: &str, runtime: &str, para_id: ParaId) -> std::result::Result<Bo
 		"staging" => Ok(Box::new(chain_spec::mashnet::make_staging_spec(para_id)?)),
 		"rococo" => Ok(Box::new(chain_spec::mashnet::load_rococo_spec()?)),
 		"dev" => Ok(Box::new(chain_spec::mashnet::make_dev_spec(para_id)?)),
-		"spiritnet-dev" => Ok(Box::new(chain_spec::spiritnet::get_chain_spec(para_id)?)),
+		"spiritnet-dev" => Ok(Box::new(chain_spec::spiritnet::get_chain_spec_dev(para_id)?)),
+		"wilt-new" => Ok(Box::new(chain_spec::spiritnet::get_chain_spec_wilt()?)),
+		"spiritnet-new" => Ok(Box::new(chain_spec::spiritnet::get_chain_spec_spiritnet()?)),
 		"spiritnet" => Ok(Box::new(chain_spec::spiritnet::load_spiritnet_spec()?)),
 		"" => match runtime {
-			"spiritnet" => Ok(Box::new(chain_spec::spiritnet::get_chain_spec(para_id)?)),
+			"spiritnet" => Ok(Box::new(chain_spec::spiritnet::get_chain_spec_dev(para_id)?)),
 			"mashnet" => Ok(Box::new(chain_spec::mashnet::make_dev_spec(para_id)?)),
 			_ => Err("Unknown runtime".to_owned()),
 		},
@@ -58,7 +62,7 @@ fn load_spec(id: &str, runtime: &str, para_id: ParaId) -> std::result::Result<Bo
 
 impl SubstrateCli for Cli {
 	fn impl_name() -> String {
-		"KILT collator".into()
+		"KILT".into()
 	}
 
 	fn impl_version() -> String {
@@ -67,7 +71,7 @@ impl SubstrateCli for Cli {
 
 	fn description() -> String {
 		format!(
-			"KILT collator\n\nThe command-line arguments provided first will be \
+			"KILT\n\nThe command-line arguments provided first will be \
 		passed to the parachain node, while the arguments provided after -- will be passed \
 		to the relaychain node.\n\n\
 		{} [parachain-args] -- [relaychain-args]",
@@ -109,7 +113,7 @@ impl SubstrateCli for Cli {
 
 impl SubstrateCli for RelayChainCli {
 	fn impl_name() -> String {
-		"KILT collator".into()
+		"KILT".into()
 	}
 
 	fn impl_version() -> String {
@@ -117,7 +121,7 @@ impl SubstrateCli for RelayChainCli {
 	}
 
 	fn description() -> String {
-		"KILT collator\n\nThe command-line arguments provided first will be \
+		"KILT\n\nThe command-line arguments provided first will be \
 		passed to the parachain node, while the arguments provided after -- will be passed \
 		to the relaychain node.\n\n\
 		kilt-parachain [parachain-args] -- [relaychain-args]"
@@ -179,7 +183,7 @@ macro_rules! construct_async_run {
 						{ $( $code )* }.map(|v| (v, task_manager))
 					})
 				}
-			_ => panic!("unkown runtime"),
+			_ => panic!("unknown runtime"),
 		}
 	}}
 }
@@ -302,13 +306,27 @@ pub fn run() -> Result<()> {
 
 			Ok(())
 		}
+		#[cfg(feature = "try-runtime")]
+		Some(Subcommand::TryRuntime(cmd)) => {
+			let runner = cli.create_runner(cmd)?;
+			runner.async_run(|config| {
+				// we don't need any of the components of new_partial, just a runtime, or a task
+				// manager to do `async_run`.
+				let registry = config.prometheus_config.as_ref().map(|cfg| &cfg.registry);
+				let task_manager = sc_service::TaskManager::new(config.task_executor.clone(), registry)
+					.map_err(|e| sc_cli::Error::Service(sc_service::Error::Prometheus(e)))?;
+
+				Ok((cmd.run::<Block, Executor>(config), task_manager))
+			})
+		}
+		#[cfg(not(feature = "try-runtime"))]
+		Some(Subcommand::TryRuntime) => Err("TryRuntime wasn't enabled when building the node. \
+				You can enable it with `--features try-runtime`."
+			.into()),
 		None => {
 			let runner = cli.create_runner(&cli.run.normalize())?;
 
 			runner.run_node_until_exit(|config| async move {
-				// TODO
-				let key = sp_core::Pair::generate().0;
-
 				let para_id = chain_spec::Extensions::try_get(&*config.chain_spec).map(|e| e.para_id);
 
 				let polkadot_cli = RelayChainCli::new(
@@ -340,7 +358,6 @@ pub fn run() -> Result<()> {
 				match cli.runtime.as_str() {
 					"mashnet" => crate::service::start_node::<MashRuntimeExecutor, kilt_parachain_runtime::RuntimeApi>(
 						config,
-						key,
 						polkadot_config,
 						id,
 					)
@@ -349,7 +366,6 @@ pub fn run() -> Result<()> {
 					.map_err(Into::into),
 					"spiritnet" => crate::service::start_node::<SpiritRuntimeExecutor, spiritnet_runtime::RuntimeApi>(
 						config,
-						key,
 						polkadot_config,
 						id,
 					)

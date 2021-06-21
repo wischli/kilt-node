@@ -118,7 +118,7 @@ pub mod default_weights;
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
-	use crate::default_weights::WeightInfo;
+	pub use crate::default_weights::WeightInfo;
 	#[cfg(feature = "std")]
 	use frame_support::traits::GenesisBuild;
 	use frame_support::{
@@ -769,7 +769,7 @@ pub mod pallet {
 				},
 			);
 			// Disallow anything from being paid by custom lock
-			<pallet_balances::Pallet<T>>::set_lock(KILT_LAUNCH_ID, &target, target_amount, WithdrawReasons::all());
+			<pallet_balances::Pallet<T>>::set_lock(KILT_LAUNCH_ID, target, target_amount, WithdrawReasons::all());
 
 			// Update or remove lock storage items corresponding to the source address
 			if max_add_amount == source_amount {
