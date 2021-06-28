@@ -2,8 +2,6 @@
 
 [package.metadata.wharf.builder]
 image = "paritytech/ci-linux:105b919b-20210617"
-user = "root"
-target = "release/kilt-parachain"
 [package]
 name = "mashnet-nodes"
 version = "0.1.0"
@@ -13,7 +11,7 @@ name = "test"
 path = "src/tests.rs"
 
 [package.metadata.wharf.output]
-image = "scratch"
+image = "debian:buster-slim"
 expose = ["30333", "9933", "9944"]
 volumes = ["/data"]
 
