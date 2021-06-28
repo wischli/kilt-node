@@ -1,15 +1,11 @@
 # syntax = denzp/cargo-wharf-frontend:v0.1.0-alpha.2
 
 [package.metadata.wharf.builder]
-image = "paritytech/ci-linux:105b919b-20210617 as builder"
+image = "paritytech/ci-linux:105b919b-20210617"
 user = "root"
 target = "release/kilt-parachain"
-post-install-commands = [
-  { shell = "useradd -m -u 1000 -U -s /bin/sh -d /node node && mkdir -p /node/.local/share/node && chown -R node:node /node/.local && ln -s /node/.local/share/node /data && rm -rf /usr/bin /usr/sbin" },
-
-]
 [package]
-name = "mashnet-node"
+name = "mashnet-nodes"
 version = "0.1.0"
 
 [[bin]]
@@ -20,6 +16,10 @@ path = "src/tests.rs"
 image = "scratch"
 expose = ["30333", "9933", "9944"]
 volumes = ["/data"]
+
+post-install-commands = [
+  { shell = "useradd -m -u 1000 -U -s /bin/sh -d /node node && mkdir -p /node/.local/share/node && chown -R node:node /node/.local && ln -s /node/.local/share/node /data && rm -rf /usr/bin /usr/sbin" },
+]
 entrypoint = ["/usr/local/bin/node-executable", "-c"]
 
 [profile.release]
