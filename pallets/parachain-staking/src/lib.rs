@@ -1474,7 +1474,7 @@ pub mod pallet {
 			.into())
 		}
 
-		/// Delegate another collator's candidate by staking some funds and
+		/// Delegate another collator candidate by staking some funds and
 		/// increasing the pallet's as well as the collator's total stake.
 		///
 		/// The account that wants to delegate cannot be part of the collator
