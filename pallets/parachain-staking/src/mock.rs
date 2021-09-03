@@ -73,7 +73,7 @@ parameter_types! {
 }
 
 impl frame_system::Config for Test {
-	type BaseCallFilter = frame_support::traits::Everything;
+	type BaseCallFilter = ();
 	type DbWeight = ();
 	type Origin = Origin;
 	type Index = u64;

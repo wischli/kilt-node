@@ -26,11 +26,10 @@
 use std::sync::Arc;
 
 use kilt_primitives::{AccountId, Balance, Block, Index};
-use sc_service::Error;
-use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_block_builder::BlockBuilder;
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
+use sp_transaction_pool::TransactionPool;
 
 pub use sc_rpc_api::DenyUnsafe;
 
@@ -45,7 +44,7 @@ pub struct FullDeps<C, P> {
 }
 
 /// Instantiate all full RPC extensions.
-pub fn create_full<C, P>(deps: FullDeps<C, P>) -> Result<jsonrpc_core::IoHandler<sc_rpc::Metadata>, Error>
+pub fn create_full<C, P>(deps: FullDeps<C, P>) -> jsonrpc_core::IoHandler<sc_rpc::Metadata>
 where
 	C: ProvideRuntimeApi<Block>,
 	C: HeaderBackend<Block> + HeaderMetadata<Block, Error = BlockChainError> + 'static,
@@ -79,5 +78,5 @@ where
 	// `io.extend_with(YourRpcTrait::to_delegate(YourRpcStruct::
 	// new(ReferenceToClient, ...)));`
 
-	Ok(io)
+	io
 }

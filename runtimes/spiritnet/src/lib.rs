@@ -27,7 +27,7 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
-use frame_support::traits::Contains;
+use frame_support::traits::Filter;
 use frame_system::limits::{BlockLength, BlockWeights};
 use kilt_primitives::{
 	constants::{
@@ -136,8 +136,8 @@ parameter_types! {
 }
 
 pub struct BaseFilter;
-impl Contains<Call> for BaseFilter {
-	fn contains(c: &Call) -> bool {
+impl Filter<Call> for BaseFilter {
+	fn filter(c: &Call) -> bool {
 		!matches!(
 			c,
 			Call::Vesting(pallet_vesting::Call::vested_transfer(..))
@@ -277,8 +277,6 @@ impl cumulus_pallet_aura_ext::Config for Runtime {}
 
 impl pallet_aura::Config for Runtime {
 	type AuthorityId = AuthorityId;
-	//TODO: handle disabled validators
-	type DisabledValidators = ();
 }
 
 parameter_types! {
