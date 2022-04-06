@@ -311,18 +311,18 @@ impl<T: Config> DidDetails<T> {
 	// Creates a new DID entry from some [DidCreationDetails] and a given
 	// authentication key.
 	pub fn from_creation_details(
-		details: DidCreationDetails<T>,
-		new_auth_key: DidVerificationKey,
+		details: DidCreationDetails,
+		submitter: AccountIdOf<T>
 	) -> Result<Self, DidError> {
 		let current_block_number = frame_system::Pallet::<T>::block_number();
 
 		let deposit = Deposit {
-			owner: details.submitter,
+			owner: submitter,
 			amount: T::Deposit::get(),
 		};
 
 		// Creates a new DID with the given authentication key.
-		let new_did_details = DidDetails::new(new_auth_key, current_block_number, deposit)?;
+		let new_did_details = DidDetails::new(details.auth_key, current_block_number, deposit)?;
 
 		Ok(new_did_details)
 	}
@@ -523,18 +523,15 @@ pub(crate) type DidPublicKeyMap<T> =
 #[derive(Clone, Decode, Encode, PartialEq, TypeInfo)]
 #[scale_info(skip_type_params(T))]
 
-pub struct DidCreationDetails<T: Config> {
-	/// The DID identifier. It has to be unique.
-	pub did: DidIdentifierOf<T>,
-	/// The authorised submitter of the creation operation.
-	pub submitter: AccountIdOf<T>,
+pub struct DidCreationDetails {
+	/// The authentication key of the DID.
+	pub auth_key: DidVerificationKey,
 }
 
-impl<T: Config> sp_std::fmt::Debug for DidCreationDetails<T> {
+impl sp_std::fmt::Debug for DidCreationDetails {
 	fn fmt(&self, f: &mut sp_std::fmt::Formatter<'_>) -> sp_std::fmt::Result {
 		f.debug_struct("DidCreationDetails")
-			.field("did", &self.did)
-			.field("submitter", &self.submitter)
+			.field("auth_key", &self.auth_key)
 			.finish()
 	}
 }
@@ -644,11 +641,10 @@ impl<T: Config> core::ops::Deref for DidAuthorizedCallOperationWithVerificationR
 impl<T: Config> WrapperTypeEncode for DidAuthorizedCallOperationWithVerificationRelationship<T> {}
 
 pub trait DidCallProxy<T: Config> {
-	fn weight(call: &DidCallableOf<T>) -> Weight;
+	fn weight(did_call: &DidAuthorizedCallOperation<T>) -> Weight;
 
 	fn authorise(
-		call: &DidCallableOf<T>,
-		did: &DidIdentifierOf<T>,
+		did_call: &DidAuthorizedCallOperation<T>,
 		signature: &DidSignature,
 	) -> Result<(), DispatchError>;
 }

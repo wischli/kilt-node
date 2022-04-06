@@ -29,7 +29,7 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 use codec::{Decode, Encode, MaxEncodedLen};
 use delegation::DelegationAc;
-use did::did_details::DidVerificationType;
+use did::{did_details::DidVerificationType, DeriveDidCallAuthorizationVerificationType};
 use frame_support::traits::InstanceFilter;
 pub use frame_support::{
 	construct_runtime, parameter_types,
@@ -684,16 +684,38 @@ construct_runtime!(
 
 pub struct DidCallProxy;
 impl did::DidCallProxy<Runtime> for DidCallProxy {
-    fn weight(call: &did::DidCallableOf<Runtime>) -> Weight {
+    fn weight(did_call: &did::DidAuthorizedCallOperation<Runtime>) -> Weight {
         todo!()
     }
 
     fn authorise(
-		call: &did::DidCallableOf<Runtime>,
-		did: &did::DidIdentifierOf<Runtime>,
+		did_call: &did::DidAuthorizedCallOperation<Runtime>,
 		signature: &did::DidSignature,
 	) -> Result<(), sp_runtime::DispatchError> {
-        todo!()
+		let verification_key_relationship = did_call
+				.call
+				.derive_verification_key_relationship()
+				.map_err(Error::<T>::from)?;
+
+		match verification_key_relationship {
+			DidVerificationType::Inline => {
+				match did_call.call {
+					Call::Did(did::Call::create())
+				}
+				did_call.did
+				call.did
+					.verify_and_recover_signature(&did_call.encode(), &signature)
+					.map_err(Error::<T>::from)
+			},
+			DidVerificationType::StoredVerificationKey(key_relationship) => {
+				let wrapped_operation = did::DidAuthorizedCallOperationWithVerificationRelationship {
+					operation: *did_call,
+					verification_key_relationship,
+				};
+
+				Did::verify_did_operation_signature_and_increase_nonce(&wrapped_operation, &signature).map_err(Error::<T>::from)
+			}
+		}
     }
 }
 
