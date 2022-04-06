@@ -497,8 +497,8 @@ pub mod pallet {
 			// otherwise generate a DidAlreadyPresent error.
 			ensure!(!Did::<T>::contains_key(&did_identifier), Error::<T>::DidAlreadyPresent);
 
-			let did_entry =
-				DidDetails::from_creation_details(DidCreationDetails { auth_key }, origin.sender().clone()).map_err(Error::<T>::from)?;
+			let did_entry = DidDetails::from_creation_details(DidCreationDetails { auth_key }, origin.sender().clone())
+				.map_err(Error::<T>::from)?;
 
 			// *** No Fail beyond this call ***
 

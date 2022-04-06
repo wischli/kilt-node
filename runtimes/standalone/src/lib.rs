@@ -29,10 +29,10 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 use codec::{Decode, Encode, MaxEncodedLen};
 use delegation::DelegationAc;
-use did::{did_details::DidVerificationType, DeriveDidCallAuthorizationVerificationType};
+use did::{did_details::{DidVerificationType, DidAuthorizedCallOperation, DidVerifiableIdentifier}, DeriveDidCallAuthorizationVerificationType, DidAuthorizedCallOperationWithVerificationRelationship};
 use frame_support::traits::InstanceFilter;
 pub use frame_support::{
-	construct_runtime, parameter_types,
+	construct_runtime, ensure, parameter_types,
 	traits::{Currency, FindAuthor, Imbalance, KeyOwnerProofSystem, OnUnbalanced, Randomness},
 	weights::{
 		constants::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_PER_SECOND},
@@ -51,6 +51,7 @@ use sp_runtime::{
 	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, ConvertInto, NumberFor, OpaqueKeys, Verify},
 	transaction_validity::{TransactionSource, TransactionValidity},
 	ApplyExtrinsicResult, RuntimeDebug,
+	DispatchError,
 };
 pub use sp_runtime::{Perbill, Permill};
 use sp_std::prelude::*;
@@ -684,39 +685,37 @@ construct_runtime!(
 
 pub struct DidCallProxy;
 impl did::DidCallProxy<Runtime> for DidCallProxy {
-    fn weight(did_call: &did::DidAuthorizedCallOperation<Runtime>) -> Weight {
-        todo!()
-    }
+	fn weight(did_call: &DidAuthorizedCallOperation<Runtime>) -> Weight {
+		todo!()
+	}
 
-    fn authorise(
-		did_call: &did::DidAuthorizedCallOperation<Runtime>,
+	fn authorise(
+		did_call: &DidAuthorizedCallOperation<Runtime>,
 		signature: &did::DidSignature,
 	) -> Result<(), sp_runtime::DispatchError> {
 		let verification_key_relationship = did_call
-				.call
-				.derive_verification_key_relationship()
-				.map_err(Error::<T>::from)?;
+			.call
+			.derive_verification_key_relationship()
+			.map_err(did::Error::<Runtime>::from)?;
 
 		match verification_key_relationship {
 			DidVerificationType::Inline => {
-				match did_call.call {
-					Call::Did(did::Call::create())
-				}
 				did_call.did
-				call.did
 					.verify_and_recover_signature(&did_call.encode(), &signature)
-					.map_err(Error::<T>::from)
-			},
+					.map_err(did::Error::<Runtime>::from).map_err(DispatchError::from)?;
+				Ok(())
+			}
 			DidVerificationType::StoredVerificationKey(key_relationship) => {
-				let wrapped_operation = did::DidAuthorizedCallOperationWithVerificationRelationship {
-					operation: *did_call,
-					verification_key_relationship,
+				let wrapped_operation = DidAuthorizedCallOperationWithVerificationRelationship {
+					operation: did_call.clone(),
+					verification_key_relationship: key_relationship,
 				};
 
-				Did::verify_did_operation_signature_and_increase_nonce(&wrapped_operation, &signature).map_err(Error::<T>::from)
+				Did::verify_did_operation_signature_and_increase_nonce(&wrapped_operation, &signature)
+					.map_err(did::Error::<Runtime>::from).map_err(DispatchError::from)
 			}
 		}
-    }
+	}
 }
 
 impl did::DeriveDidCallAuthorizationVerificationType for Call {
@@ -728,39 +727,42 @@ impl did::DeriveDidCallAuthorizationVerificationType for Call {
 				.derive_verification_key_relationship()?;
 
 			match first_call_key {
-				// If the first call in the batch requires an inline signature, only certain DID operations are allowed
+				// If the first call in the batch requires an inline signature, only certain DID operations can be part
+				// of the batch.
 				DidVerificationType::Inline => {
-					calls
-					.iter()
-					.skip(1)
-					.find(|call| {
-						!matches!(
-							call,
-							Call::Did(
-								did::Call::set_delegation_key{ .. }
-									| did::Call::set_attestation_key{ .. }
-									| did::Call::add_key_agreement_key{ .. }
-									| did::Call::add_service_endpoint{ .. }
+					let are_calls_allowed = calls
+						.iter()
+						.skip(1)
+						.all(|call| {
+							matches!(
+								call,
+								Call::Did(
+									did::Call::set_delegation_key { .. }
+										| did::Call::set_attestation_key { .. } | did::Call::add_key_agreement_key { .. }
+										| did::Call::add_service_endpoint { .. }
+								)
 							)
-						)
-					}).ok_or(did::RelationshipDeriveError::InvalidCallParameter)?;
+						});
+					ensure!(are_calls_allowed, did::RelationshipDeriveError::InvalidCallParameter);
 					// The verification logic for the whole batch is therefore `inline`
 					Ok(first_call_key)
-				},
-				// If the first call in the batch requires a stored key, then all calls must have the same key relationship
-				DidVerificationType::StoredVerificationKey(key_rel) => {
-					calls
+				}
+				// If the first call in the batch requires a stored key, then all calls must have the same key
+				// relationship. This means that Inline calls are not allowed, e.g., it is not possible to squeeze in a
+				// DID creation operation.
+				DidVerificationType::StoredVerificationKey(key_rel) => calls
 					.iter()
 					.skip(1)
 					.map(Call::derive_verification_key_relationship)
-					.try_fold(DidVerificationType::with_verification_key(key_rel), |acc, next| {
-						match next {
-							Err(_) => next,
+					.try_fold(
+						DidVerificationType::with_verification_key(key_rel),
+						|acc, next| match next {
+							// Step successful if the next key relationship is of the same type as the current one.
 							Ok(key_type) if key_type == acc => Ok(acc),
+							Err(_) => next,
 							_ => Err(did::RelationshipDeriveError::InvalidCallParameter),
-						}
-					})
-				}
+						},
+					),
 			}
 		}
 

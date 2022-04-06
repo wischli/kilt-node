@@ -310,10 +310,7 @@ impl<T: Config> DidDetails<T> {
 
 	// Creates a new DID entry from some [DidCreationDetails] and a given
 	// authentication key.
-	pub fn from_creation_details(
-		details: DidCreationDetails,
-		submitter: AccountIdOf<T>
-	) -> Result<Self, DidError> {
+	pub fn from_creation_details(details: DidCreationDetails, submitter: AccountIdOf<T>) -> Result<Self, DidError> {
 		let current_block_number = frame_system::Pallet::<T>::block_number();
 
 		let deposit = Deposit {
@@ -643,8 +640,5 @@ impl<T: Config> WrapperTypeEncode for DidAuthorizedCallOperationWithVerification
 pub trait DidCallProxy<T: Config> {
 	fn weight(did_call: &DidAuthorizedCallOperation<T>) -> Weight;
 
-	fn authorise(
-		did_call: &DidAuthorizedCallOperation<T>,
-		signature: &DidSignature,
-	) -> Result<(), DispatchError>;
+	fn authorise(did_call: &DidAuthorizedCallOperation<T>, signature: &DidSignature) -> Result<(), DispatchError>;
 }
