@@ -5,6 +5,7 @@ name = "runtime-common"
 version = "1.6.1"
 
 [dev-dependencies]
+did = {features = ["mock"], path = "../../pallets/did"}
 sp-io = {git = "https://github.com/paritytech/substrate", default-features = false, branch = "polkadot-v0.9.17"}
 
 [dependencies]
