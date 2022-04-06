@@ -39,6 +39,7 @@ use sp_runtime::{
 
 pub mod authorization;
 pub mod constants;
+pub mod did;
 pub mod fees;
 pub mod pallet_id;
 

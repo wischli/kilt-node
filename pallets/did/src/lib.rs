@@ -100,11 +100,7 @@ mod utils;
 
 pub use crate::{
 	default_weights::WeightInfo,
-	did_details::{
-		DeriveDidCallAuthorizationVerificationType, DeriveDidVerificationTypeResult,
-		DidAuthorizedCallOperationWithVerificationRelationship, DidCallProxy, DidSignature,
-		DidVerificationKeyRelationship, RelationshipDeriveError,
-	},
+	did_details::*,
 	origin::{DidRawOrigin, EnsureDidOrigin},
 	pallet::*,
 	signature::DidSignatureVerify,
