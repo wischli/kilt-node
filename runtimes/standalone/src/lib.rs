@@ -29,6 +29,7 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 use codec::{Decode, Encode, MaxEncodedLen};
 use delegation::DelegationAc;
+use did::did_details::DidVerificationType;
 use frame_support::traits::InstanceFilter;
 pub use frame_support::{
 	construct_runtime, parameter_types,
@@ -379,6 +380,7 @@ impl did::Config for Runtime {
 	type DidIdentifier = DidIdentifier;
 	type Event = Event;
 	type Call = Call;
+	type DidCallProxy = DidCallProxy;
 	type Origin = Origin;
 	type Currency = Balances;
 	type Deposit = constants::did::DidDeposit;
@@ -680,34 +682,87 @@ construct_runtime!(
 	}
 );
 
+pub struct DidCallProxy;
+impl did::DidCallProxy<Runtime> for DidCallProxy {
+    fn weight(call: &did::DidCallableOf<Runtime>) -> Weight {
+        todo!()
+    }
+
+    fn authorise(
+		call: &did::DidCallableOf<Runtime>,
+		did: &did::DidIdentifierOf<Runtime>,
+		signature: &did::DidSignature,
+	) -> Result<(), sp_runtime::DispatchError> {
+        todo!()
+    }
+}
+
 impl did::DeriveDidCallAuthorizationVerificationType for Call {
 	fn derive_verification_key_relationship(&self) -> did::DeriveDidVerificationTypeResult {
 		fn single_key_relationship(calls: &[Call]) -> did::DeriveDidVerificationTypeResult {
-			let init = calls
+			let first_call_key = calls
 				.get(0)
 				.ok_or(did::RelationshipDeriveError::InvalidCallParameter)?
 				.derive_verification_key_relationship()?;
-			calls
-				.iter()
-				.skip(1)
-				.map(Call::derive_verification_key_relationship)
-				.try_fold(init, |acc, next| {
-					if Ok(acc) == next {
-						Ok(acc)
-					} else {
-						Err(did::RelationshipDeriveError::InvalidCallParameter)
-					}
-				})
+
+			match first_call_key {
+				// If the first call in the batch requires an inline signature, only certain DID operations are allowed
+				DidVerificationType::Inline => {
+					calls
+					.iter()
+					.skip(1)
+					.find(|call| {
+						!matches!(
+							call,
+							Call::Did(
+								did::Call::set_delegation_key{ .. }
+									| did::Call::set_attestation_key{ .. }
+									| did::Call::add_key_agreement_key{ .. }
+									| did::Call::add_service_endpoint{ .. }
+							)
+						)
+					}).ok_or(did::RelationshipDeriveError::InvalidCallParameter)?;
+					// The verification logic for the whole batch is therefore `inline`
+					Ok(first_call_key)
+				},
+				// If the first call in the batch requires a stored key, then all calls must have the same key relationship
+				DidVerificationType::StoredVerificationKey(key_rel) => {
+					calls
+					.iter()
+					.skip(1)
+					.map(Call::derive_verification_key_relationship)
+					.try_fold(DidVerificationType::with_verification_key(key_rel), |acc, next| {
+						match next {
+							Err(_) => next,
+							Ok(key_type) if key_type == acc => Ok(acc),
+							_ => Err(did::RelationshipDeriveError::InvalidCallParameter),
+						}
+					})
+				}
+			}
 		}
+
 		match self {
-			Call::Attestation { .. } => Ok(did::DidVerificationKeyType:: DidVerificationKeyRelationship::AssertionMethod),
-			Call::Ctype { .. } => Ok(did::DidVerificationKeyRelationship::AssertionMethod),
-			Call::Delegation { .. } => Ok(did::DidVerificationKeyRelationship::CapabilityDelegation),
+			Call::Attestation { .. } => Ok(DidVerificationType::with_verification_key(
+				did::DidVerificationKeyRelationship::AssertionMethod,
+			)),
+			Call::Ctype { .. } => Ok(DidVerificationType::with_verification_key(
+				did::DidVerificationKeyRelationship::AssertionMethod,
+			)),
+			Call::Delegation { .. } => Ok(DidVerificationType::with_verification_key(
+				did::DidVerificationKeyRelationship::CapabilityDelegation,
+			)),
 			// DID creation requires inline verification.
-			Call::Did(did::Call::create { .. }) => Err(did::RelationshipDeriveError::NotCallableByDid),
-			Call::Did { .. } => Ok(did::DidVerificationKeyRelationship::Authentication),
-			Call::Web3Names { .. } => Ok(did::DidVerificationKeyRelationship::Authentication),
-			Call::DidLookup { .. } => Ok(did::DidVerificationKeyRelationship::Authentication),
+			Call::Did(did::Call::create { .. }) => Ok(DidVerificationType::inline()),
+			Call::Did { .. } => Ok(DidVerificationType::with_verification_key(
+				did::DidVerificationKeyRelationship::Authentication,
+			)),
+			Call::Web3Names { .. } => Ok(DidVerificationType::with_verification_key(
+				did::DidVerificationKeyRelationship::Authentication,
+			)),
+			Call::DidLookup { .. } => Ok(DidVerificationType::with_verification_key(
+				did::DidVerificationKeyRelationship::Authentication,
+			)),
 			Call::Utility(pallet_utility::Call::batch { calls }) => single_key_relationship(&calls[..]),
 			Call::Utility(pallet_utility::Call::batch_all { calls }) => single_key_relationship(&calls[..]),
 			#[cfg(not(feature = "runtime-benchmarks"))]

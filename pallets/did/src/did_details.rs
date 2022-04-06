@@ -18,14 +18,15 @@
 
 use codec::{Decode, Encode, MaxEncodedLen, WrapperTypeEncode};
 use frame_support::{
+	dispatch::Weight,
 	ensure,
 	storage::{bounded_btree_map::BoundedBTreeMap, bounded_btree_set::BoundedBTreeSet},
-	traits::Get, dispatch::Weight,
+	traits::Get,
 };
 use kilt_support::deposit::Deposit;
 use scale_info::TypeInfo;
 use sp_core::{ecdsa, ed25519, sr25519};
-use sp_runtime::{traits::Verify, MultiSignature, DispatchError};
+use sp_runtime::{traits::Verify, DispatchError, MultiSignature};
 use sp_std::convert::TryInto;
 
 use crate::{
@@ -549,6 +550,7 @@ pub enum RelationshipDeriveError {
 	InvalidCallParameter,
 }
 
+#[derive(Clone, Debug, Decode, Encode, PartialEq)]
 pub enum DidVerificationType {
 	Inline,
 	StoredVerificationKey(DidVerificationKeyRelationship),
@@ -644,5 +646,9 @@ impl<T: Config> WrapperTypeEncode for DidAuthorizedCallOperationWithVerification
 pub trait DidCallProxy<T: Config> {
 	fn weight(call: &DidCallableOf<T>) -> Weight;
 
-	fn authorise(call: &DidCallableOf<T>, did: &DidIdentifierOf<T>, signature: &DidSignature) -> Result<(), DispatchError>;
+	fn authorise(
+		call: &DidCallableOf<T>,
+		did: &DidIdentifierOf<T>,
+		signature: &DidSignature,
+	) -> Result<(), DispatchError>;
 }

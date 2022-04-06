@@ -102,8 +102,8 @@ pub use crate::{
 	default_weights::WeightInfo,
 	did_details::{
 		DeriveDidCallAuthorizationVerificationType, DeriveDidVerificationTypeResult,
-		DidAuthorizedCallOperationWithVerificationRelationship, DidCallProxy, DidSignature, DidVerificationKeyRelationship,
-		RelationshipDeriveError,
+		DidAuthorizedCallOperationWithVerificationRelationship, DidCallProxy, DidSignature,
+		DidVerificationKeyRelationship, RelationshipDeriveError,
 	},
 	origin::{DidRawOrigin, EnsureDidOrigin},
 	pallet::*,
@@ -139,9 +139,8 @@ pub mod pallet {
 
 	use crate::{
 		did_details::{
-			DeriveDidCallAuthorizationVerificationType, DidAuthorizedCallOperation, DidCreationDetails,
-			DidDetails, DidEncryptionKey, DidSignature, DidVerifiableIdentifier, DidVerificationKey,
-			RelationshipDeriveError,
+			DeriveDidCallAuthorizationVerificationType, DidAuthorizedCallOperation, DidCreationDetails, DidDetails,
+			DidEncryptionKey, DidSignature, DidVerifiableIdentifier, DidVerificationKey, RelationshipDeriveError,
 		},
 		errors::{DidError, InputError, SignatureError, StorageError},
 		service_endpoints::{DidEndpoint, ServiceEndpointId},
