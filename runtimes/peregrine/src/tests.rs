@@ -144,9 +144,9 @@ fn test_derive_did_key_web3name() {
 fn test_derive_did_key_lookup() {
 	assert_eq!(
 		Call::DidLookup(pallet_did_lookup::Call::associate_account {
-			account: AccountId::new([1u8; 32]),
+			account: AccountId::new([1u8; 32]).into(),
 			expiration: BlockNumber::default(),
-			proof: sp_runtime::MultiSignature::from(sp_core::ed25519::Signature([0; 64])),
+			proof: sp_runtime::MultiSignature::from(sp_core::ed25519::Signature([0; 64])).into(),
 		})
 		.derive_verification_key_relationship(),
 		Ok(did::DidVerificationKeyRelationship::Authentication)
@@ -154,7 +154,7 @@ fn test_derive_did_key_lookup() {
 
 	assert_eq!(
 		Call::DidLookup(pallet_did_lookup::Call::remove_account_association {
-			account: AccountId::new([1u8; 32]),
+			account: AccountId::new([1u8; 32]).into(),
 		})
 		.derive_verification_key_relationship(),
 		Ok(did::DidVerificationKeyRelationship::Authentication)

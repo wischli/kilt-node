@@ -45,7 +45,7 @@ fn make_free_for_did<T: Config>(account: &AccountIdOf<T>) {
 benchmarks! {
 	where_clause {
 		where
-		T::AccountId: From<sr25519::Public>,
+		T::AccountId: From<sr25519::Public> + Into<T::LinkableAccountId>,
 		T::DidIdentifier: From<T::AccountId>,
 		T::Signature: From<sr25519::Signature>,
 		T::EnsureOrigin: GenerateBenchmarkOrigin<T::Origin, T::AccountId, T::DidIdentifier>,
@@ -57,70 +57,79 @@ benchmarks! {
 		let previous_did: T::DidIdentifier = account("prev", 0, SEED + 1);
 		let connected_acc = sr25519_generate(KeyTypeId(*b"aura"), None);
 		let connected_acc_id: T::AccountId = connected_acc.into();
+		let linkable_id: T::LinkableAccountId = connected_acc_id.into();
 		let bn: <T as frame_system::Config>::BlockNumber = 500_u32.into();
 
-		let sig: T::Signature = sp_io::crypto::sr25519_sign(KeyTypeId(*b"aura"), &connected_acc, &get_wrapped_payload(&Encode::encode(&(&did, bn))[..]))
+		let sig: T::Signature = sp_io::crypto::sr25519_sign(
+			KeyTypeId(*b"aura"),
+			&connected_acc,
+			&get_wrapped_payload(
+				&Encode::encode(&(&did, bn))[..],
+				&linkable_id,
+			))
 			.ok_or("Error while building signature.")?
 			.into();
 
 		make_free_for_did::<T>(&caller);
 
 		// Add existing connected_acc -> previous_did connection that will be replaced
-		Pallet::<T>::add_association(caller.clone(), previous_did.clone(), connected_acc_id.clone()).expect("should create previous association");
-		assert!(ConnectedAccounts::<T>::get(&previous_did, T::AccountId::from(connected_acc)).is_some());
+		Pallet::<T>::add_association(caller.clone(), previous_did.clone(), linkable_id.clone()).expect("should create previous association");
+		assert!(ConnectedAccounts::<T>::get(&previous_did, linkable_id.clone()).is_some());
 		let origin = T::EnsureOrigin::generate_origin(caller, did.clone());
-	}: _<T::Origin>(origin, connected_acc_id, bn, sig)
+	}: _<T::Origin>(origin, linkable_id.clone(), bn, sig)
 	verify {
-		assert!(ConnectedDids::<T>::get(T::AccountId::from(connected_acc)).is_some());
-		assert!(ConnectedAccounts::<T>::get(&previous_did, T::AccountId::from(connected_acc)).is_none());
-		assert!(ConnectedAccounts::<T>::get(did, T::AccountId::from(connected_acc)).is_some());
+		assert!(ConnectedDids::<T>::get(linkable_id.clone()).is_some());
+		assert!(ConnectedAccounts::<T>::get(&previous_did, linkable_id.clone()).is_none());
+		assert!(ConnectedAccounts::<T>::get(did, linkable_id).is_some());
 	}
 
 	associate_sender {
 		let caller: T::AccountId = account("caller", 0, SEED);
+		let linkable_id: T::LinkableAccountId = caller.clone().into();
 		let did: T::DidIdentifier = account("did", 0, SEED);
 		let previous_did: T::DidIdentifier = account("prev", 0, SEED + 1);
 
 		make_free_for_did::<T>(&caller);
 
 		// Add existing sender -> previous_did connection that will be replaced
-		Pallet::<T>::add_association(caller.clone(), previous_did.clone(), caller.clone()).expect("should create previous association");
-		assert!(ConnectedAccounts::<T>::get(&previous_did, &caller).is_some());
+		Pallet::<T>::add_association(caller.clone(), previous_did.clone(), caller.clone().into()).expect("should create previous association");
+		assert!(ConnectedAccounts::<T>::get(&previous_did, &linkable_id).is_some());
 		let origin = T::EnsureOrigin::generate_origin(caller.clone(), did.clone());
 	}: _<T::Origin>(origin)
 	verify {
-		assert!(ConnectedDids::<T>::get(&caller).is_some());
-		assert!(ConnectedAccounts::<T>::get(previous_did, &caller).is_none());
-		assert!(ConnectedAccounts::<T>::get(did, caller).is_some());
+		assert!(ConnectedDids::<T>::get(&linkable_id).is_some());
+		assert!(ConnectedAccounts::<T>::get(previous_did, &linkable_id).is_none());
+		assert!(ConnectedAccounts::<T>::get(did, linkable_id).is_some());
 	}
 
 	remove_sender_association {
 		let caller: T::AccountId = account("caller", 0, SEED);
+		let linkable_id: T::LinkableAccountId = caller.clone().into();
 		let did: T::DidIdentifier = account("did", 0, SEED);
 
 		make_free_for_did::<T>(&caller);
-		Pallet::<T>::add_association(caller.clone(), did.clone(), caller.clone()).expect("should create association");
+		Pallet::<T>::add_association(caller.clone(), did.clone(), linkable_id.clone()).expect("should create association");
 
 		let origin = RawOrigin::Signed(caller.clone());
 	}: _(origin)
 	verify {
-		assert!(ConnectedDids::<T>::get(&caller).is_none());
-		assert!(ConnectedAccounts::<T>::get(did, caller).is_none());
+		assert!(ConnectedDids::<T>::get(&linkable_id).is_none());
+		assert!(ConnectedAccounts::<T>::get(did, linkable_id).is_none());
 	}
 
 	remove_account_association {
 		let caller: T::AccountId = account("caller", 0, SEED);
+		let linkable_id: T::LinkableAccountId = caller.clone().into();
 		let did: T::DidIdentifier = account("did", 0, SEED);
 		make_free_for_did::<T>(&caller);
 
-		Pallet::<T>::add_association(caller.clone(), did.clone(), caller.clone()).expect("should create association");
+		Pallet::<T>::add_association(caller.clone(), did.clone(), linkable_id.clone()).expect("should create association");
 
 		let origin = T::EnsureOrigin::generate_origin(caller.clone(), did.clone());
-		let caller_clone = caller.clone();
-	}: _<T::Origin>(origin, caller_clone)
+	}: _<T::Origin>(origin, linkable_id.clone())
 	verify {
-		assert!(ConnectedDids::<T>::get(&caller).is_none());
-		assert!(ConnectedAccounts::<T>::get(did, caller).is_none());
+		assert!(ConnectedDids::<T>::get(&linkable_id).is_none());
+		assert!(ConnectedAccounts::<T>::get(did, linkable_id).is_none());
 	}
 }
 

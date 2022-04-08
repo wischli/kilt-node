@@ -62,7 +62,9 @@ pub use ctype;
 pub use delegation;
 pub use did;
 pub use pallet_balances::Call as BalancesCall;
+use pallet_did_lookup::linkable_account::{LinkableAccountId, LinkableAccountSignature};
 pub use pallet_web3_names;
+
 use runtime_common::{
 	authorization::{AuthorizationId, PalletAuthorize},
 	constants::{self, KILT, MILLI_KILT},
@@ -428,8 +430,11 @@ parameter_types! {
 
 impl pallet_did_lookup::Config for Runtime {
 	type Event = Event;
-	type Signature = Signature;
-	type Signer = <Signature as Verify>::Signer;
+
+	type LinkableAccountId = LinkableAccountId;
+	type Signature = LinkableAccountSignature;
+	type Signer = <LinkableAccountSignature as Verify>::Signer;
+
 	type DidIdentifier = DidIdentifier;
 
 	type Currency = Balances;

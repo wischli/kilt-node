@@ -105,6 +105,8 @@ parameter_types! {
 
 impl pallet_did_lookup::Config for Test {
 	type Event = Event;
+
+	type LinkableAccountId = AccountId;
 	type Signature = Signature;
 	type Signer = AccountPublic;
 
