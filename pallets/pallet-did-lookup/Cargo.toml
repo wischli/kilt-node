@@ -36,10 +36,10 @@ frame-system = {branch = "polkadot-v0.9.19", default-features = false, git = "ht
 sp-runtime = {branch = "polkadot-v0.9.19", default-features = false, git = "https://github.com/paritytech/substrate"}
 sp-std = {branch = "polkadot-v0.9.19", default-features = false, git = "https://github.com/paritytech/substrate"}
 sp-core = {branch = "polkadot-v0.9.19", default-features = false, git = "https://github.com/paritytech/substrate"}
+sp-io = {branch = "polkadot-v0.9.19", default-features = false, git = "https://github.com/paritytech/substrate"}
 
 # benchmarking
 frame-benchmarking = {branch = "polkadot-v0.9.19", optional = true, default-features = false, git = "https://github.com/paritytech/substrate"}
-sp-io = {branch = "polkadot-v0.9.19", optional = true, default-features = false, git = "https://github.com/paritytech/substrate"}
 
 [features]
 default = ["std"]
