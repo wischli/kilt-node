@@ -307,7 +307,7 @@ pub mod pallet {
 			let account: LinkableAccountIdOf<T> = account.into();
 			let record = ConnectedDids::<T>::get(&account).ok_or(Error::<T>::AssociationNotFound)?;
 			ensure!(record.deposit.owner == who, Error::<T>::NotAuthorized);
-			Self::remove_association(account.into())
+			Self::remove_association(account)
 		}
 	}
 

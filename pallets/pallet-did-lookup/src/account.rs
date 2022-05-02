@@ -16,6 +16,8 @@
 
 // If you feel like getting in touch with us, you can do so at info@botlabs.org
 
+// This code originally came from the purestake/moonbeam repo.
+
 //! The Ethereum Signature implementation.
 //!
 //! It includes the Verify and IdentifyAccount traits for the AccountId20
@@ -68,9 +70,9 @@ impl From<[u8; 20]> for AccountId20 {
 	}
 }
 
-impl Into<[u8; 20]> for AccountId20 {
-	fn into(self) -> [u8; 20] {
-		self.0
+impl From<AccountId20> for [u8; 20] {
+	fn from(id: AccountId20) -> Self {
+		id.0
 	}
 }
 
@@ -80,9 +82,9 @@ impl From<H160> for AccountId20 {
 	}
 }
 
-impl Into<H160> for AccountId20 {
-	fn into(self) -> H160 {
-		H160(self.0)
+impl From<AccountId20> for H160 {
+	fn from(id: AccountId20) -> Self {
+		H160(id.0)
 	}
 }
 

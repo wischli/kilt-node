@@ -94,7 +94,7 @@ benchmarks! {
 		// Add existing sender -> previous_did connection that will be replaced
 		Pallet::<T>::add_association(caller.clone(), previous_did.clone(), caller.clone().into()).expect("should create previous association");
 		assert!(ConnectedAccounts::<T>::get(&previous_did, &linkable_id).is_some());
-		let origin = T::EnsureOrigin::generate_origin(caller.clone(), did.clone());
+		let origin = T::EnsureOrigin::generate_origin(caller, did.clone());
 	}: _<T::Origin>(origin)
 	verify {
 		assert!(ConnectedDids::<T>::get(&linkable_id).is_some());
@@ -110,7 +110,7 @@ benchmarks! {
 		make_free_for_did::<T>(&caller);
 		Pallet::<T>::add_association(caller.clone(), did.clone(), linkable_id.clone()).expect("should create association");
 
-		let origin = RawOrigin::Signed(caller.clone());
+		let origin = RawOrigin::Signed(caller);
 	}: _(origin)
 	verify {
 		assert!(ConnectedDids::<T>::get(&linkable_id).is_none());
@@ -125,7 +125,7 @@ benchmarks! {
 
 		Pallet::<T>::add_association(caller.clone(), did.clone(), linkable_id.clone()).expect("should create association");
 
-		let origin = T::EnsureOrigin::generate_origin(caller.clone(), did.clone());
+		let origin = T::EnsureOrigin::generate_origin(caller, did.clone());
 	}: _<T::Origin>(origin, linkable_id.clone())
 	verify {
 		assert!(ConnectedDids::<T>::get(&linkable_id).is_none());
