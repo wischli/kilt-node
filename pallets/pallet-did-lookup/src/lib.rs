@@ -61,12 +61,12 @@ pub mod pallet {
 
 	use crate::signature::get_wrapped_payload;
 
-	/// The identifier to which the accounts can be associated.
+	/// The native identifier for accounts in this runtime.
 	pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 
-	/// The identifier to which the accounts can be associated.
+	/// The identifier of the accounts that can be associated to a did.
 	pub(crate) type LinkableAccountIdOf<T> = <T as Config>::LinkableAccountId;
-
+	
 	/// The identifier to which the accounts can be associated.
 	pub(crate) type DidIdentifierOf<T> = <T as Config>::DidIdentifier;
 
@@ -132,16 +132,32 @@ pub mod pallet {
 	pub struct Pallet<T>(_);
 
 	/// Mapping from account identifiers to DIDs.
+	/// *DEPRECATED* migrate and use ConnectedDidsV2 instead.
 	#[pallet::storage]
 	#[pallet::getter(fn connected_dids)]
-	pub type ConnectedDids<T> = StorageMap<_, Blake2_128Concat, LinkableAccountIdOf<T>, ConnectionRecordOf<T>>;
+	pub type ConnectedDids<T> = StorageMap<_, Blake2_128Concat, AccountIdOf<T>, ConnectionRecordOf<T>>;
+
+	/// Mapping from account identifiers to DIDs.
+	/// new version of the storage
+	#[pallet::storage]
+	#[pallet::getter(fn connected_dids_v2)]
+	pub type ConnectedDidsV2<T> = StorageMap<_, Blake2_128Concat, LinkableAccountIdOf<T>, ConnectionRecordOf<T>>;
+
+	/// Mapping from (DID + account identifier) -> ().
+	/// The empty tuple is used as a sentinel value to simply indicate the
+	/// presence of a given tuple in the map.
+	/// *DEPRECATED* migrate and use ConnectedAccountsV2 instead.
+	#[pallet::storage]
+	#[pallet::getter(fn connected_accounts)]
+	pub type ConnectedAccounts<T> =
+		StorageDoubleMap<_, Blake2_128Concat, DidIdentifierOf<T>, Blake2_128Concat, AccountIdOf<T>, ()>;
 
 	/// Mapping from (DID + account identifier) -> ().
 	/// The empty tuple is used as a sentinel value to simply indicate the
 	/// presence of a given tuple in the map.
 	#[pallet::storage]
-	#[pallet::getter(fn connected_accounts)]
-	pub type ConnectedAccounts<T> =
+	#[pallet::getter(fn connected_accounts_v2)]
+	pub type ConnectedAccountsV2<T> =
 		StorageDoubleMap<_, Blake2_128Concat, DidIdentifierOf<T>, Blake2_128Concat, LinkableAccountIdOf<T>, ()>;
 
 	#[pallet::event]
@@ -152,6 +168,9 @@ pub mod pallet {
 
 		/// An association between a DID and an account ID was removed.
 		AssociationRemoved(LinkableAccountIdOf<T>, DidIdentifierOf<T>),
+
+		/// All associations between a DID and its account IDs has been migrated.
+		AssociationsMigrated(DidIdentifierOf<T>),
 	}
 
 	#[pallet::error]
@@ -283,7 +302,7 @@ pub mod pallet {
 		pub fn remove_account_association(origin: OriginFor<T>, account: LinkableAccountIdOf<T>) -> DispatchResult {
 			let source = <T as Config>::EnsureOrigin::ensure_origin(origin)?;
 
-			let connection_record = ConnectedDids::<T>::get(&account).ok_or(Error::<T>::AssociationNotFound)?;
+			let connection_record = ConnectedDidsV2::<T>::get(&account).ok_or(Error::<T>::AssociationNotFound)?;
 			ensure!(connection_record.did == source.subject(), Error::<T>::NotAuthorized);
 
 			Self::remove_association(account)
@@ -305,11 +324,39 @@ pub mod pallet {
 			let who = ensure_signed(origin)?;
 
 			let account: LinkableAccountIdOf<T> = account.into();
-			let record = ConnectedDids::<T>::get(&account).ok_or(Error::<T>::AssociationNotFound)?;
+			let record = ConnectedDidsV2::<T>::get(&account).ok_or(Error::<T>::AssociationNotFound)?;
 			ensure!(record.deposit.owner == who, Error::<T>::NotAuthorized);
 			Self::remove_association(account)
 		}
+		
+		/// Migrate all associations of a did to the new storage format.
+		#[pallet::weight(<T as Config>::WeightInfo::remove_sender_association())] // @TODO better weight
+		pub fn migrate_associations(origin: OriginFor<T>) -> DispatchResult {
+			let source = <T as Config>::EnsureOrigin::ensure_origin(origin)?;
+
+			// iterate over all linked accounts
+			ConnectedAccounts::<T>::iter_key_prefix(&source.subject()).for_each(|account| {
+
+				// convert account type
+				let linkable_account: LinkableAccountIdOf<T> = account.clone().into();
+
+				// move them into the new storage format
+				ConnectedAccountsV2::<T>::insert(&source.subject(), &linkable_account, ());
+				ConnectedAccounts::<T>::remove(&source.subject(), &account);
+				
+				// retrieve the connection record from the account -> did mapping and move it too
+				if let Some(record) = ConnectedDids::<T>::get(&account) {
+					ConnectedDidsV2::<T>::insert(&linkable_account, &record);
+					ConnectedDids::<T>::remove(&account);
+				}
+			});
+
+			Self::deposit_event(Event::AssociationsMigrated(source.subject()));
+
+			Ok(())
+		}
 	}
+
 
 	impl<T: Config> Pallet<T> {
 		pub(crate) fn add_association(
@@ -329,22 +376,22 @@ pub mod pallet {
 			// *** NO FAILURE beyond the reserve call ***
 			CurrencyOf::<T>::reserve(&record.deposit.owner, record.deposit.amount)?;
 
-			ConnectedDids::<T>::mutate(&account, |did_entry| {
+			ConnectedDidsV2::<T>::mutate(&account, |did_entry| {
 				if let Some(old_connection) = did_entry.replace(record) {
-					ConnectedAccounts::<T>::remove(&old_connection.did, &account);
+					ConnectedAccountsV2::<T>::remove(&old_connection.did, &account);
 					Self::deposit_event(Event::<T>::AssociationRemoved(account.clone(), old_connection.did));
 					kilt_support::free_deposit::<AccountIdOf<T>, CurrencyOf<T>>(&old_connection.deposit);
 				}
 			});
-			ConnectedAccounts::<T>::insert(&did_identifier, &account, ());
+			ConnectedAccountsV2::<T>::insert(&did_identifier, &account, ());
 			Self::deposit_event(Event::AssociationEstablished(account, did_identifier));
 
 			Ok(())
 		}
 
 		pub(crate) fn remove_association(account: LinkableAccountIdOf<T>) -> DispatchResult {
-			if let Some(connection) = ConnectedDids::<T>::take(&account) {
-				ConnectedAccounts::<T>::remove(&connection.did, &account);
+			if let Some(connection) = ConnectedDidsV2::<T>::take(&account) {
+				ConnectedAccountsV2::<T>::remove(&connection.did, &account);
 				kilt_support::free_deposit::<AccountIdOf<T>, CurrencyOf<T>>(&connection.deposit);
 				Self::deposit_event(Event::AssociationRemoved(account, connection.did));
 
