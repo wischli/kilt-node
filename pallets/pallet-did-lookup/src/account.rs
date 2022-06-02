@@ -181,7 +181,6 @@ impl sp_runtime::traits::Verify for EthereumSignature {
 	}
 }
 
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -191,8 +190,9 @@ mod tests {
 	#[test]
 	fn test_account_derivation_1() {
 		// Test from https://asecuritysite.com/encryption/ethadd
-		// This page generates a private ethereum key, a public key and computes an address from it.
-		// We take those values as reference point to proof that our implementation is correct.
+		// This page generates a private ethereum key, a public key and computes an
+		// address from it. We take those values as reference point to proof that our
+		// implementation is correct.
 		let secret_key = hex::decode("502f97299c472b88754accd412b7c9a6062ef3186fba0c0388365e1edec24875").unwrap();
 		let mut expected_hex_account = [0u8; 20];
 		hex::decode_to_slice("976f8456e4e2034179b284a23c0e0c8f6d3da50c", &mut expected_hex_account)

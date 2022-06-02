@@ -66,7 +66,7 @@ pub mod pallet {
 
 	/// The identifier of the accounts that can be associated to a DID.
 	pub(crate) type LinkableAccountIdOf<T> = <T as Config>::LinkableAccountId;
-	
+
 	/// The identifier to which the accounts can be associated.
 	pub(crate) type DidIdentifierOf<T> = <T as Config>::DidIdentifier;
 
@@ -169,7 +169,8 @@ pub mod pallet {
 		/// An association between a DID and an account ID was removed.
 		AssociationRemoved(LinkableAccountIdOf<T>, DidIdentifierOf<T>),
 
-		/// All associations between a DID and its account IDs has been migrated.
+		/// All associations between a DID and its account IDs has been
+		/// migrated.
 		AssociationsMigrated(DidIdentifierOf<T>),
 	}
 
@@ -328,7 +329,7 @@ pub mod pallet {
 			ensure!(record.deposit.owner == who, Error::<T>::NotAuthorized);
 			Self::remove_association(account)
 		}
-		
+
 		/// Migrate all associations of a did to the new storage format.
 		#[pallet::weight(<T as Config>::WeightInfo::remove_sender_association())] // @TODO better weight
 		pub fn migrate_associations(origin: OriginFor<T>) -> DispatchResult {
@@ -336,14 +337,14 @@ pub mod pallet {
 
 			// iterate over all linked accounts
 			ConnectedAccounts::<T>::drain_prefix(&source.subject()).for_each(|account| {
-			
 				// convert account type
 				let linkable_account: LinkableAccountIdOf<T> = account.clone().into();
 
 				// move them into the new storage format
 				ConnectedAccountsV2::<T>::insert(&source.subject(), &linkable_account, ());
-				
-				// retrieve the connection record from the account -> did mapping and move it too
+
+				// retrieve the connection record from the account -> did mapping and move it
+				// too
 				if let Some(record) = ConnectedDids::<T>::get(&account) {
 					ConnectedDidsV2::<T>::insert(&linkable_account, &record);
 					ConnectedDids::<T>::remove(&account);
@@ -355,7 +356,6 @@ pub mod pallet {
 			Ok(())
 		}
 	}
-
 
 	impl<T: Config> Pallet<T> {
 		pub(crate) fn add_association(
