@@ -335,14 +335,13 @@ pub mod pallet {
 			let source = <T as Config>::EnsureOrigin::ensure_origin(origin)?;
 
 			// iterate over all linked accounts
-			ConnectedAccounts::<T>::iter_key_prefix(&source.subject()).for_each(|account| {
-
+			ConnectedAccounts::<T>::drain_prefix(&source.subject()).for_each(|account| {
+			
 				// convert account type
 				let linkable_account: LinkableAccountIdOf<T> = account.clone().into();
 
 				// move them into the new storage format
 				ConnectedAccountsV2::<T>::insert(&source.subject(), &linkable_account, ());
-				ConnectedAccounts::<T>::remove(&source.subject(), &account);
 				
 				// retrieve the connection record from the account -> did mapping and move it too
 				if let Some(record) = ConnectedDids::<T>::get(&account) {
