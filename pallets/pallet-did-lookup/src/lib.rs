@@ -171,7 +171,7 @@ pub mod pallet {
 
 		/// All associations between a DID and its account IDs has been
 		/// migrated.
-		AssociationsMigrated(DidIdentifierOf<T>),
+		AssociationMigrated(LinkableAccountIdOf<T>, DidIdentifierOf<T>),
 	}
 
 	#[pallet::error]
@@ -332,26 +332,24 @@ pub mod pallet {
 
 		/// Migrate all associations of a did to the new storage format.
 		#[pallet::weight(<T as Config>::WeightInfo::remove_sender_association())] // @TODO better weight
-		pub fn migrate_associations(origin: OriginFor<T>) -> DispatchResult {
-			let source = <T as Config>::EnsureOrigin::ensure_origin(origin)?;
+		pub fn migrate_associations(origin: OriginFor<T>, did: DidIdentifierOf<T>, account: AccountIdOf<T>) -> DispatchResult {
+			// anybody can do this, as long as the origin is signed correctly
+			<T as Config>::EnsureOrigin::ensure_origin(origin)?;
+			
+			// convert account id to linkable account id
+			let linkable_account: LinkableAccountIdOf<T> = account.clone().into();
+			
+			// move the ConnectedAccounts entry if existing
+			if let Some(_) = ConnectedAccounts::<T>::take(&did, &account) {
+				ConnectedAccountsV2::<T>::insert(&did, &linkable_account, ());
+			}
 
-			// iterate over all linked accounts
-			ConnectedAccounts::<T>::drain_prefix(&source.subject()).for_each(|account| {
-				// convert account type
-				let linkable_account: LinkableAccountIdOf<T> = account.clone().into();
+			// move the ConnectedDids entry if existing
+			if let Some(record) = ConnectedDids::<T>::take(account) {
+				ConnectedDidsV2::<T>::insert(&linkable_account, record);
+			}
 
-				// move them into the new storage format
-				ConnectedAccountsV2::<T>::insert(&source.subject(), &linkable_account, ());
-
-				// retrieve the connection record from the account -> did mapping and move it
-				// too
-				if let Some(record) = ConnectedDids::<T>::get(&account) {
-					ConnectedDidsV2::<T>::insert(&linkable_account, &record);
-					ConnectedDids::<T>::remove(&account);
-				}
-			});
-
-			Self::deposit_event(Event::AssociationsMigrated(source.subject()));
+			Self::deposit_event(Event::AssociationMigrated(linkable_account, did));
 
 			Ok(())
 		}
