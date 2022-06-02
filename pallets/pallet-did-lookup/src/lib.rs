@@ -64,7 +64,7 @@ pub mod pallet {
 	/// The native identifier for accounts in this runtime.
 	pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 
-	/// The identifier of the accounts that can be associated to a did.
+	/// The identifier of the accounts that can be associated to a DID.
 	pub(crate) type LinkableAccountIdOf<T> = <T as Config>::LinkableAccountId;
 	
 	/// The identifier to which the accounts can be associated.
