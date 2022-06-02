@@ -98,43 +98,6 @@ impl std::str::FromStr for AccountId20 {
 	}
 }
 
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Eq, PartialEq, Clone, Encode, Decode, MaxEncodedLen, RuntimeDebug, TypeInfo)]
-pub struct EthereumSignature(ecdsa::Signature);
-
-impl From<ecdsa::Signature> for EthereumSignature {
-	fn from(x: ecdsa::Signature) -> Self {
-		EthereumSignature(x)
-	}
-}
-
-impl sp_runtime::traits::Verify for EthereumSignature {
-	type Signer = EthereumSigner;
-	fn verify<L: sp_runtime::traits::Lazy<[u8]>>(&self, mut msg: L, signer: &AccountId20) -> bool {
-		let mut m = [0u8; 32];
-		m.copy_from_slice(Keccak256::digest(msg.get()).as_slice());
-		match sp_io::crypto::secp256k1_ecdsa_recover(self.0.as_ref(), &m) {
-			Ok(pubkey) => {
-				// TODO This conversion could use a comment. Why H256 first, then H160?
-				// TODO actually, there is probably just a better way to go from Keccak digest.
-				AccountId20(H160::from(H256::from_slice(Keccak256::digest(&pubkey).as_slice())).0) == *signer
-			}
-			Err(sp_io::EcdsaVerifyError::BadRS) => {
-				log::error!(target: "evm", "Error recovering: Incorrect value of R or S");
-				false
-			}
-			Err(sp_io::EcdsaVerifyError::BadV) => {
-				log::error!(target: "evm", "Error recovering: Incorrect value of V");
-				false
-			}
-			Err(sp_io::EcdsaVerifyError::BadSignature) => {
-				log::error!(target: "evm", "Error recovering: Invalid signature");
-				false
-			}
-		}
-	}
-}
-
 /// Public key for an Ethereum / Moonbeam compatible account
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Encode, Decode, RuntimeDebug, TypeInfo)]
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
@@ -181,6 +144,44 @@ impl std::fmt::Display for EthereumSigner {
 	}
 }
 
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Eq, PartialEq, Clone, Encode, Decode, MaxEncodedLen, RuntimeDebug, TypeInfo)]
+pub struct EthereumSignature(ecdsa::Signature);
+
+impl From<ecdsa::Signature> for EthereumSignature {
+	fn from(x: ecdsa::Signature) -> Self {
+		EthereumSignature(x)
+	}
+}
+
+impl sp_runtime::traits::Verify for EthereumSignature {
+	type Signer = EthereumSigner;
+	fn verify<L: sp_runtime::traits::Lazy<[u8]>>(&self, mut msg: L, signer: &AccountId20) -> bool {
+		let mut hashed_message_buffer = [0u8; 32];
+		hashed_message_buffer.copy_from_slice(Keccak256::digest(msg.get()).as_slice());
+		match sp_io::crypto::secp256k1_ecdsa_recover(self.0.as_ref(), &hashed_message_buffer) {
+			Ok(pubkey) => {
+				// TODO This conversion could use a comment. Why H256 first, then H160?
+				// TODO actually, there is probably just a better way to go from Keccak digest.
+				AccountId20(H160::from(H256::from_slice(Keccak256::digest(&pubkey).as_slice())).0) == *signer
+			}
+			Err(sp_io::EcdsaVerifyError::BadRS) => {
+				log::trace!(target: "evm", "Error recovering: Incorrect value of R or S");
+				false
+			}
+			Err(sp_io::EcdsaVerifyError::BadV) => {
+				log::error!(target: "evm", "Error recovering: Incorrect value of V");
+				false
+			}
+			Err(sp_io::EcdsaVerifyError::BadSignature) => {
+				log::error!(target: "evm", "Error recovering: Invalid signature");
+				false
+			}
+		}
+	}
+}
+
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -190,6 +191,8 @@ mod tests {
 	#[test]
 	fn test_account_derivation_1() {
 		// Test from https://asecuritysite.com/encryption/ethadd
+		// This page generates a private ethereum key, a public key and computes an address from it.
+		// We take those values as reference point to proof that our implementation is correct.
 		let secret_key = hex::decode("502f97299c472b88754accd412b7c9a6062ef3186fba0c0388365e1edec24875").unwrap();
 		let mut expected_hex_account = [0u8; 20];
 		hex::decode_to_slice("976f8456e4e2034179b284a23c0e0c8f6d3da50c", &mut expected_hex_account)
