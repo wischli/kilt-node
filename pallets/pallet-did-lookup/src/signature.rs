@@ -41,6 +41,7 @@ pub(crate) fn get_wrapped_payload<A: GetWrapType>(payload: &[u8], account: &A) -
 			.collect(),
 		WrapType::Ethereum => ETHEREUM_SIGNATURE_PREFIX
 			.iter()
+			// eth wrapping also contains the length of the payload
 			.chain(payload.len().to_string().as_bytes().iter())
 			.chain(payload.iter())
 			.copied()
