@@ -20,7 +20,7 @@
 //! Benchmarking
 
 use crate::{
-	signature::get_wrapped_payload, AccountIdOf, Call, Config, ConnectedAccounts, ConnectedDids, CurrencyOf, Pallet,
+	signature::get_wrapped_payload, AccountIdOf, Call, Config, ConnectedAccountsV2, ConnectedDidsV2, CurrencyOf, Pallet,
 };
 
 use codec::Encode;
@@ -74,13 +74,14 @@ benchmarks! {
 
 		// Add existing connected_acc -> previous_did connection that will be replaced
 		Pallet::<T>::add_association(caller.clone(), previous_did.clone(), linkable_id.clone()).expect("should create previous association");
-		assert!(ConnectedAccounts::<T>::get(&previous_did, linkable_id.clone()).is_some());
+		assert!(ConnectedAccountsV2::<T>::get(&previous_did, linkable_id.clone()).is_some());
 		let origin = T::EnsureOrigin::generate_origin(caller, did.clone());
-	}: _<T::Origin>(origin, linkable_id.clone(), bn, sig)
+		let id_arg = linkable_id.clone();
+	}: _<T::Origin>(origin, id_arg, bn, sig)
 	verify {
-		assert!(ConnectedDids::<T>::get(linkable_id.clone()).is_some());
-		assert!(ConnectedAccounts::<T>::get(&previous_did, linkable_id.clone()).is_none());
-		assert!(ConnectedAccounts::<T>::get(did, linkable_id).is_some());
+		assert!(ConnectedDidsV2::<T>::get(linkable_id.clone()).is_some());
+		assert!(ConnectedAccountsV2::<T>::get(&previous_did, linkable_id.clone()).is_none());
+		assert!(ConnectedAccountsV2::<T>::get(did, linkable_id.clone()).is_some());
 	}
 
 	associate_sender {
@@ -93,13 +94,13 @@ benchmarks! {
 
 		// Add existing sender -> previous_did connection that will be replaced
 		Pallet::<T>::add_association(caller.clone(), previous_did.clone(), caller.clone().into()).expect("should create previous association");
-		assert!(ConnectedAccounts::<T>::get(&previous_did, &linkable_id).is_some());
+		assert!(ConnectedAccountsV2::<T>::get(&previous_did, &linkable_id).is_some());
 		let origin = T::EnsureOrigin::generate_origin(caller, did.clone());
 	}: _<T::Origin>(origin)
 	verify {
-		assert!(ConnectedDids::<T>::get(&linkable_id).is_some());
-		assert!(ConnectedAccounts::<T>::get(previous_did, &linkable_id).is_none());
-		assert!(ConnectedAccounts::<T>::get(did, linkable_id).is_some());
+		assert!(ConnectedDidsV2::<T>::get(&linkable_id).is_some());
+		assert!(ConnectedAccountsV2::<T>::get(previous_did, &linkable_id).is_none());
+		assert!(ConnectedAccountsV2::<T>::get(did, linkable_id).is_some());
 	}
 
 	remove_sender_association {
@@ -113,8 +114,8 @@ benchmarks! {
 		let origin = RawOrigin::Signed(caller);
 	}: _(origin)
 	verify {
-		assert!(ConnectedDids::<T>::get(&linkable_id).is_none());
-		assert!(ConnectedAccounts::<T>::get(did, linkable_id).is_none());
+		assert!(ConnectedDidsV2::<T>::get(&linkable_id).is_none());
+		assert!(ConnectedAccountsV2::<T>::get(did, linkable_id).is_none());
 	}
 
 	remove_account_association {
@@ -126,10 +127,11 @@ benchmarks! {
 		Pallet::<T>::add_association(caller.clone(), did.clone(), linkable_id.clone()).expect("should create association");
 
 		let origin = T::EnsureOrigin::generate_origin(caller, did.clone());
-	}: _<T::Origin>(origin, linkable_id.clone())
+		let id_arg = linkable_id.clone();
+	}: _<T::Origin>(origin, id_arg)
 	verify {
-		assert!(ConnectedDids::<T>::get(&linkable_id).is_none());
-		assert!(ConnectedAccounts::<T>::get(did, linkable_id).is_none());
+		assert!(ConnectedDidsV2::<T>::get(&linkable_id).is_none());
+		assert!(ConnectedAccountsV2::<T>::get(did, linkable_id).is_none());
 	}
 }
 

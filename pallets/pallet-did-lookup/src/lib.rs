@@ -332,24 +332,28 @@ pub mod pallet {
 
 		/// Migrate all associations of a did to the new storage format.
 		#[pallet::weight(<T as Config>::WeightInfo::remove_sender_association())] // @TODO better weight
-		pub fn migrate_associations(origin: OriginFor<T>, did: DidIdentifierOf<T>, account: AccountIdOf<T>) -> DispatchResult {
+		pub fn migrate_association(
+			origin: OriginFor<T>,
+			did: DidIdentifierOf<T>,
+			account: AccountIdOf<T>,
+		) -> DispatchResult {
 			// anybody can do this, as long as the origin is signed correctly
 			<T as Config>::EnsureOrigin::ensure_origin(origin)?;
-			
+
 			// convert account id to linkable account id
 			let linkable_account: LinkableAccountIdOf<T> = account.clone().into();
-			
+
 			// move the ConnectedAccounts entry if existing
 			if let Some(_) = ConnectedAccounts::<T>::take(&did, &account) {
 				ConnectedAccountsV2::<T>::insert(&did, &linkable_account, ());
-			}
+				// move the ConnectedDids entry if existing
+				if let Some(record) = ConnectedDids::<T>::take(account) {
+					ConnectedDidsV2::<T>::insert(&linkable_account, record);
+				}
 
-			// move the ConnectedDids entry if existing
-			if let Some(record) = ConnectedDids::<T>::take(account) {
-				ConnectedDidsV2::<T>::insert(&linkable_account, record);
+				// indicate successfully migration
+				Self::deposit_event(Event::AssociationMigrated(linkable_account, did));
 			}
-
-			Self::deposit_event(Event::AssociationMigrated(linkable_account, did));
 
 			Ok(())
 		}
